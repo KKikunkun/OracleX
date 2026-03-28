@@ -1,0 +1,28 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "agents",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "agents", "dev"],
+      "cwd": "/Users/mac/Desktop/Xlayer 第二期",
+      "port": 3001
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "frontend", "start"],
+      "cwd": "/Users/mac/Desktop/Xlayer 第二期",
+      "port": 3000,
+      "autoPort": false
+    }
+    ,{
+      "name": "demo-ui",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-l", "8080", "."],
+      "cwd": "/Users/mac/Desktop/Xlayer 第二期/frontend/public",
+      "port": 8080,
+      "autoPort": false
+    }
+  ]
+}

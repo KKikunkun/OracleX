@@ -1,0 +1,17 @@
+{
+  "name": "oraclex",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:agents": "pnpm --filter agents dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build:frontend": "pnpm --filter frontend build",
+    "start:frontend": "pnpm --filter frontend start",
+    "contracts:compile": "pnpm --filter contracts compile",
+    "contracts:deploy:testnet": "pnpm --filter contracts deploy:testnet",
+    "contracts:deploy:mainnet": "pnpm --filter contracts deploy:mainnet",
+    "kill": "pkill -f \"Xlayer\" 2>/dev/null || true; lsof -ti:3000 | xargs kill -9 2>/dev/null || true; lsof -ti:3001 | xargs kill -9 2>/dev/null || true; echo Cleaned",
+    "dev": "pnpm kill && pnpm --filter agents dev & sleep 8 && pnpm build:frontend && pnpm start:frontend"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

@@ -1,0 +1,13 @@
+node_modules/
+.env
+dist/
+.next/
+artifacts/
+cache/
+typechain-types/
+coverage/
+*.db
+*.log
+.data/
+.DS_Store
+tsconfig.tsbuildinfo

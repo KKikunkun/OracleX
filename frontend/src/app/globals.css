@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+body {
+  background-color: #08080F;
+  color: #F1F5F9;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 15px;
+}
+
+/* Glass card effect */
+.bg-oracle-panel {
+  background: #0F0F1A;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 24px rgba(0,0,0,0.4);
+}
+
+/* Glowing accent border */
+.glow-accent {
+  box-shadow: 0 0 20px rgba(124,58,237,0.25);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #08080F; }
+::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.4); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #7C3AED; }

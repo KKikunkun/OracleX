@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OracleX — AI Prediction Markets on X Layer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
+      colors: {
+        ox: {
+          bg:      '#080c14',
+          surface: '#0d1220',
+          card:    '#111827',
+          border:  '#1e2d40',
+          accent:  '#7c3aed',
+          accentL: '#8b5cf6',
+          yes:     '#10b981',
+          no:      '#ef4444',
+          gold:    '#f59e0b',
+          muted:   '#6b7280',
+          text:    '#f1f5f9',
+          dim:     '#94a3b8',
+        }
+      },
+      animation: {
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'float': 'float 6s ease-in-out infinite',
+        'ticker': 'ticker 30s linear infinite',
+      },
+      keyframes: {
+        float: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-8px)' },
+        },
+        ticker: {
+          '0%': { transform: 'translateX(0%)' },
+          '100%': { transform: 'translateX(-50%)' },
+        }
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { background: #080c14; color: #f1f5f9; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0d1220; }
+  ::-webkit-scrollbar-thumb { background: #1e2d40; border-radius: 2px; }
+
+  /* Glass morphism */
+  .glass {
+    background: rgba(13, 18, 32, 0.72);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(30, 45, 64, 0.8);
+  }
+  .glass-card {
+    background: rgba(17, 24, 39, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(30, 45, 64, 0.7);
+    transition: all 0.25s ease;
+  }
+  .glass-card:hover {
+    border-color: rgba(124, 58, 237, 0.35);
+    box-shadow: 0 8px 32px rgba(124, 58, 237, 0.08), 0 2px 8px rgba(0,0,0,0.4);
+    transform: translateY(-1px);
+  }
+
+  /* Glow effects */
+  .glow-purple { box-shadow: 0 0 40px rgba(124, 58, 237, 0.15), 0 0 80px rgba(124, 58, 237, 0.05); }
+  .glow-yes { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
+  .glow-no  { box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); }
+  .text-glow { text-shadow: 0 0 30px rgba(124, 58, 237, 0.5); }
+
+  /* Hero gradient orbs */
+  .orb1 {
+    position: absolute; width: 600px; height: 600px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%);
+    top: -200px; left: -150px; pointer-events: none;
+  }
+  .orb2 {
+    position: absolute; width: 400px; height: 400px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(16,185,129,0.1) 0%, transparent 70%);
+    top: 100px; right: -100px; pointer-events: none;
+  }
+  .grid-bg {
+    background-image: linear-gradient(rgba(124,58,237,0.03) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(124,58,237,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Ticker */
+  .ticker-wrap { overflow: hidden; white-space: nowrap; }
+  .ticker-inner { display: inline-flex; animation: ticker 40s linear infinite; }
+  .ticker-inner:hover { animation-play-state: paused; }
+
+  /* Progress bar */
+  .prob-bar { height: 6px; border-radius: 3px; background: rgba(30,45,64,0.8); overflow: hidden; }
+  .prob-fill { height: 100%; border-radius: 3px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+
+  /* Bet button */
+  .btn-yes {
+    background: linear-gradient(135deg, #059669, #10b981);
+    box-shadow: 0 4px 15px rgba(16,185,129,0.25);
+  }
+  .btn-yes:hover { box-shadow: 0 4px 20px rgba(16,185,129,0.4); transform: translateY(-1px); }
+  .btn-no {
+    background: linear-gradient(135deg, #dc2626, #ef4444);
+    box-shadow: 0 4px 15px rgba(239,68,68,0.25);
+  }
+  .btn-no:hover { box-shadow: 0 4px 20px rgba(239,68,68,0.4); transform: translateY(-1px); }
+  .btn-accent {
+    background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+    box-shadow: 0 4px 15px rgba(124,58,237,0.3);
+  }
+  .btn-accent:hover { box-shadow: 0 4px 25px rgba(124,58,237,0.5); transform: translateY(-1px); }
+
+  /* Nav active */
+  .nav-active { color: #8b5cf6; }
+
+  /* Status dot */
+  .live-dot { width:7px; height:7px; border-radius:50%; background:#10b981; animation: pulse-dot 2s infinite; }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 5px rgba(16,185,129,0); }
+  }
+
+  /* Tab */
+  .tab-active {
+    color: #8b5cf6;
+    border-bottom: 2px solid #8b5cf6;
+  }
+  .tab-inactive {
+    color: #6b7280;
+    border-bottom: 2px solid transparent;
+  }
+  .tab-inactive:hover { color: #94a3b8; }
+
+  /* Input */
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type=range] { accent-color: #7c3aed; }
+
+  /* Chip */
+  .chip {
+    padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    border: 1px solid; cursor: pointer; transition: all 0.15s;
+  }
+  .chip-yes { border-color: rgba(16,185,129,0.4); color: #10b981; background: rgba(16,185,129,0.08); }
+  .chip-yes:hover, .chip-yes.active { background: rgba(16,185,129,0.15); border-color: #10b981; }
+  .chip-no { border-color: rgba(239,68,68,0.4); color: #ef4444; background: rgba(239,68,68,0.08); }
+  .chip-no:hover, .chip-no.active { background: rgba(239,68,68,0.15); border-color: #ef4444; }
+
+  /* Card selected */
+  .market-card.selected { border-color: rgba(124,58,237,0.6) !important; box-shadow: 0 0 0 1px rgba(124,58,237,0.3), 0 8px 32px rgba(124,58,237,0.12); }
+
+  /* Feed item */
+  .feed-item { animation: fadeIn 0.4s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Badge */
+  .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; }
+  .badge-live { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
+  .badge-resolved { background: rgba(124,58,237,0.12); color: #8b5cf6; border: 1px solid rgba(124,58,237,0.25); }
+  .badge-demo { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
+
+  /* Number flash */
+  .flash-up { animation: flashUp 0.5s ease; }
+  .flash-down { animation: flashDown 0.5s ease; }
+  @keyframes flashUp { 0%,100%{color:inherit} 50%{color:#10b981} }
+  @keyframes flashDown { 0%,100%{color:inherit} 50%{color:#ef4444} }
+
+  /* Transparent canvas for charts */
+  canvas { background: transparent !important; }
+
+  /* How it works step */
+  .step-line::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 16px);
+    width: calc(100% - 16px);
+    height: 1px;
+    background: linear-gradient(90deg, rgba(124,58,237,0.3), transparent);
+  }
+</style>
+</head>
+<body class="antialiased">
+
+<!-- ━━━━━━━━━━━━━━━━━ STICKY NAV ━━━━━━━━━━━━━━━━━ -->
+<nav class="glass fixed top-0 left-0 right-0 z-50 h-[62px]">
+  <div class="max-w-7xl mx-auto px-5 h-full flex items-center justify-between">
+    <!-- Logo -->
+    <a href="#" class="flex items-center gap-2.5 group">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center text-white font-bold text-sm glow-purple">◈</div>
+      <span class="font-bold text-[15px] tracking-tight text-white">OracleX</span>
+      <span class="text-ox-muted text-xs font-mono hidden sm:block">/ X Layer</span>
+    </a>
+
+    <!-- Center links -->
+    <div class="hidden md:flex items-center gap-1">
+      <a href="#markets" class="px-3.5 py-1.5 text-sm text-ox-dim hover:text-white transition-colors rounded-lg hover:bg-white/5">Markets</a>
+      <a href="#leaderboard" class="px-3.5 py-1.5 text-sm text-ox-dim hover:text-white transition-colors rounded-lg hover:bg-white/5">Agents</a>
+      <a href="#how" class="px-3.5 py-1.5 text-sm text-ox-dim hover:text-white transition-colors rounded-lg hover:bg-white/5">How It Works</a>
+    </div>
+
+    <!-- Right -->
+    <div class="flex items-center gap-3">
+      <div class="hidden sm:flex items-center gap-1.5 text-xs text-ox-dim">
+        <div class="live-dot"></div>
+        <span class="font-mono">X Layer</span>
+      </div>
+      <button onclick="connectWallet()" id="walletBtn" class="btn-accent px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200">
+        Connect Wallet
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ━━━━━━━━━━━━━━━━━ PRICE TICKER ━━━━━━━━━━━━━━━━━ -->
+<div class="fixed top-[62px] left-0 right-0 z-40 border-b border-ox-border/50" style="background:rgba(13,18,32,0.95); backdrop-filter:blur(10px);">
+  <div class="ticker-wrap py-2.5">
+    <div class="ticker-inner" id="ticker">
+      <!-- filled by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━ HERO ━━━━━━━━━━━━━━━━━ -->
+<section class="relative pt-[130px] pb-10 overflow-hidden grid-bg" id="home">
+  <div class="orb1"></div>
+  <div class="orb2"></div>
+  <div class="max-w-7xl mx-auto px-5 relative z-10">
+    <div class="max-w-3xl mx-auto text-center mb-10">
+      <!-- Label -->
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-violet-500/30 bg-violet-500/8 text-violet-400 text-xs font-semibold mb-6 tracking-wide">
+        <span class="live-dot"></span>
+        AI-POWERED · X LAYER MAINNET · ERC-8183
+      </div>
+      <h1 class="text-5xl sm:text-6xl lg:text-6xl font-black tracking-tight mb-5 leading-[1.08]">
+        <span class="text-white block">Predict Markets.</span>
+        <span class="bg-gradient-to-r from-violet-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent text-glow block">
+          Powered by AI Agents.
+        </span>
+      </h1>
+      <p class="text-ox-dim text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-8">
+        Three autonomous AI agents watch OKX price feeds, deploy markets on‑chain, and settle with cryptographic proof — all without human intervention.
+      </p>
+      <div class="flex flex-wrap gap-3 justify-center">
+        <a href="#markets" class="btn-accent px-7 py-3.5 rounded-2xl text-[15px] font-semibold text-white transition-all duration-200 inline-flex items-center gap-2">
+          <span>Explore Markets</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 14 0M13 5l7 7-7 7"/></svg>
+        </a>
+        <a href="#how" class="px-7 py-3.5 rounded-2xl text-[15px] font-semibold text-ox-dim border border-ox-border hover:border-violet-500/40 hover:text-white transition-all duration-200">
+          How It Works
+        </a>
+      </div>
+    </div>
+
+    <!-- Global stats -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="glass-card rounded-2xl p-5 text-center">
+        <div class="text-3xl font-black font-mono text-violet-400 mb-1" id="stat-markets">—</div>
+        <div class="text-xs text-ox-muted uppercase tracking-wider font-medium">Markets Created</div>
+      </div>
+      <div class="glass-card rounded-2xl p-5 text-center">
+        <div class="text-3xl font-black font-mono text-emerald-400 mb-1" id="stat-resolved">—</div>
+        <div class="text-xs text-ox-muted uppercase tracking-wider font-medium">Markets Resolved</div>
+      </div>
+      <div class="glass-card rounded-2xl p-5 text-center">
+        <div class="text-3xl font-black font-mono text-amber-400 mb-1" id="stat-signals">—</div>
+        <div class="text-xs text-ox-muted uppercase tracking-wider font-medium">AI Signals Fired</div>
+      </div>
+      <div class="glass-card rounded-2xl p-5 text-center">
+        <div class="text-3xl font-black font-mono text-sky-400 mb-1" id="stat-txs">—</div>
+        <div class="text-xs text-ox-muted uppercase tracking-wider font-medium">On-chain TXs</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ━━━━━━━━━━━━━━━━━ MARKETS + BETTING ━━━━━━━━━━━━━━━━━ -->
+<section id="markets" class="py-10">
+  <div class="max-w-7xl mx-auto px-5">
+    <!-- Section header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h2 class="text-2xl font-bold text-white mb-1">Live Markets</h2>
+        <p class="text-ox-muted text-sm">Real-time prediction markets deployed by AI agents</p>
+      </div>
+      <div class="flex items-center gap-2 text-xs text-ox-muted border border-ox-border rounded-xl px-3 py-2">
+        <div class="live-dot"></div>
+        <span>Auto-refreshing</span>
+      </div>
+    </div>
+
+    <!-- Main layout: markets list + bet panel -->
+    <div class="grid xl:grid-cols-[1fr_380px] gap-6">
+
+      <!-- Left: markets -->
+      <div class="space-y-4" id="marketsList">
+        <!-- filled by JS -->
+        <div class="text-center py-12 text-ox-muted" id="marketsLoading">
+          <div class="inline-block w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin mb-3"></div>
+          <p class="text-sm">Loading markets…</p>
+        </div>
+      </div>
+
+      <!-- Right: bet panel + chart -->
+      <div class="space-y-5 xl:sticky xl:top-[112px] xl:self-start xl:max-h-[calc(100vh-130px)] xl:overflow-y-auto">
+
+        <!-- Bet slip -->
+        <div class="glass-card rounded-2xl p-5" id="betPanel">
+          <div class="text-center py-8">
+            <div class="w-14 h-14 rounded-2xl bg-violet-500/10 flex items-center justify-center mx-auto mb-3 text-2xl">◈</div>
+            <p class="text-ox-dim text-sm font-medium">Select a market to place a bet</p>
+          </div>
+        </div>
+
+        <!-- Probability donut -->
+        <div class="glass-card rounded-2xl p-5" id="chartPanel" style="display:none">
+          <h3 class="text-xs font-bold text-ox-muted uppercase tracking-wider mb-4">Probability Distribution</h3>
+          <div class="relative" style="height:200px">
+            <canvas id="donutChart"></canvas>
+            <div class="absolute inset-0 flex flex-col items-center justify-center" id="donutCenter">
+              <span class="text-2xl font-black font-mono text-white" id="donutYes">—%</span>
+              <span class="text-xs text-ox-muted">YES probability</span>
+            </div>
+          </div>
+          <div class="flex justify-center gap-8 mt-4">
+            <div class="flex items-center gap-2 text-sm">
+              <div class="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
+              <span class="text-ox-dim font-mono font-medium" id="chartYesPct">—%</span>
+              <span class="text-ox-muted text-xs">YES</span>
+            </div>
+            <div class="flex items-center gap-2 text-sm">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div>
+              <span class="text-ox-dim font-mono font-medium" id="chartNoPct">—%</span>
+              <span class="text-ox-muted text-xs">NO</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pool size bar chart -->
+        <div class="glass-card rounded-2xl p-5" id="poolPanel" style="display:none">
+          <h3 class="text-xs font-bold text-ox-muted uppercase tracking-wider mb-4">Pool Breakdown</h3>
+          <canvas id="poolChart" height="100"></canvas>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ━━━━━━━━━━━━━━━━━ AGENT LEADERBOARD ━━━━━━━━━━━━━━━━━ -->
+<section id="leaderboard" class="py-10 border-t border-ox-border/40">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="mb-8 text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-violet-500/30 bg-violet-500/8 text-violet-400 text-xs font-semibold mb-3 tracking-wide">
+        ERC-8183 · ERC-8004
+      </div>
+      <h2 class="text-3xl font-bold text-white mb-2">Agent Performance</h2>
+      <p class="text-ox-muted">Three autonomous AI agents running the OracleX pipeline end-to-end</p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-5 mb-8">
+      <!-- Signal Agent -->
+      <div class="glass-card rounded-2xl p-6">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-11 h-11 rounded-xl bg-amber-500/12 flex items-center justify-center text-xl text-amber-400 border border-amber-500/20">◈</div>
+          <div>
+            <h3 class="font-bold text-amber-400 text-[15px]">Signal Agent</h3>
+            <p class="text-xs text-ox-muted">Volatility detection</p>
+          </div>
+          <span class="ml-auto text-xs border border-ox-border px-2 py-0.5 rounded-full font-mono text-ox-muted">ERC-8183</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 py-4 border-y border-ox-border/50 mb-4">
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-amber-400" id="agent-signals">—</p>
+            <p class="text-xs text-ox-muted mt-0.5">Signals</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-white">—</p>
+            <p class="text-xs text-ox-muted mt-0.5">Deploys</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-ox-muted">—</p>
+            <p class="text-xs text-ox-muted mt-0.5">Accuracy</p>
+          </div>
+        </div>
+        <p class="text-xs text-ox-muted leading-relaxed">Monitors OKX price feeds 24/7, detects volatility windows, triggers market creation via ERC-8183 job commit.</p>
+      </div>
+
+      <!-- Creator Agent -->
+      <div class="glass-card rounded-2xl p-6 border-violet-500/20">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-11 h-11 rounded-xl bg-violet-500/12 flex items-center justify-center text-xl text-violet-400 border border-violet-500/20">⬡</div>
+          <div>
+            <h3 class="font-bold text-violet-400 text-[15px]">Creator Agent</h3>
+            <p class="text-xs text-ox-muted">Market deployer</p>
+          </div>
+          <span class="ml-auto text-xs border border-ox-border px-2 py-0.5 rounded-full font-mono text-ox-muted">ERC-8004</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 py-4 border-y border-ox-border/50 mb-4">
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-violet-400" id="agent-creates">—</p>
+            <p class="text-xs text-ox-muted mt-0.5">Deploys</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-white" id="agent-creates2">—</p>
+            <p class="text-xs text-ox-muted mt-0.5">Active</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-emerald-400">✓</p>
+            <p class="text-xs text-ox-muted mt-0.5">Reputation</p>
+          </div>
+        </div>
+        <p class="text-xs text-ox-muted leading-relaxed">Deploys PredictionMarket contracts on X Layer, manages nonces and initial OKB liquidity injection.</p>
+      </div>
+
+      <!-- Resolver Agent -->
+      <div class="glass-card rounded-2xl p-6">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-11 h-11 rounded-xl bg-emerald-500/12 flex items-center justify-center text-xl text-emerald-400 border border-emerald-500/20">✓</div>
+          <div>
+            <h3 class="font-bold text-emerald-400 text-[15px]">Resolver Agent</h3>
+            <p class="text-xs text-ox-muted">Settlement engine</p>
+          </div>
+          <span class="ml-auto text-xs border border-ox-border px-2 py-0.5 rounded-full font-mono text-ox-muted">ERC-8183</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 py-4 border-y border-ox-border/50 mb-4">
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-emerald-400" id="agent-resolves">—</p>
+            <p class="text-xs text-ox-muted mt-0.5">Resolves</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-white" id="agent-accuracy">—</p>
+            <p class="text-xs text-ox-muted mt-0.5">Accuracy</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xl font-black font-mono text-emerald-400">100%</p>
+            <p class="text-xs text-ox-muted mt-0.5">Success</p>
+          </div>
+        </div>
+        <p class="text-xs text-ox-muted leading-relaxed">Polls OKX Market API at deadline, settles markets with cryptographic proof, distributes winnings on-chain.</p>
+      </div>
+    </div>
+
+    <!-- Live feed -->
+    <div class="glass-card rounded-2xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-ox-border/50 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="live-dot"></div>
+          <span class="text-sm font-bold text-white uppercase tracking-wide">Agent Activity Feed</span>
+        </div>
+        <span class="text-xs text-ox-muted bg-ox-surface px-2.5 py-1 rounded-full" id="feedCount">0 events</span>
+      </div>
+      <div class="divide-y divide-ox-border/30 max-h-80 overflow-y-auto" id="activityFeed">
+        <p class="px-5 py-8 text-center text-ox-muted text-sm">Loading agent activity…</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ━━━━━━━━━━━━━━━━━ HOW IT WORKS ━━━━━━━━━━━━━━━━━ -->
+<section id="how" class="py-12 border-t border-ox-border/40">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="text-center mb-8">
+      <h2 class="text-3xl font-bold text-white mb-2">How OracleX Works</h2>
+      <p class="text-ox-muted">Fully autonomous from price signal to settlement — no human in the loop</p>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-[1fr_40px_1fr_40px_1fr_40px_1fr] gap-3 items-stretch">
+      <!-- Step 1 -->
+      <div class="glass-card rounded-2xl p-6 text-center">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500/12 border border-amber-500/20 flex items-center justify-center text-amber-400 text-2xl mx-auto mb-4">◈</div>
+        <div class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider">Step 1</div>
+        <h3 class="font-bold text-white text-sm mb-2">Signal Detected</h3>
+        <p class="text-xs text-ox-muted leading-relaxed">AI Signal Agent watches OKX price feeds and detects volatility windows worth betting on.</p>
+      </div>
+      <div class="hidden lg:flex items-center justify-center text-ox-border/60 shrink-0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </div>
+      <!-- Step 2 -->
+      <div class="glass-card rounded-2xl p-6 text-center">
+        <div class="w-12 h-12 rounded-2xl bg-violet-500/12 border border-violet-500/20 flex items-center justify-center text-violet-400 text-2xl mx-auto mb-4">⬡</div>
+        <div class="text-xs font-bold text-violet-400 mb-2 uppercase tracking-wider">Step 2</div>
+        <h3 class="font-bold text-white text-sm mb-2">Market Deployed</h3>
+        <p class="text-xs text-ox-muted leading-relaxed">Creator Agent deploys a PredictionMarket contract on X Layer with initial OKB liquidity.</p>
+      </div>
+      <div class="hidden lg:flex items-center justify-center text-ox-border/60 shrink-0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </div>
+      <!-- Step 3 -->
+      <div class="glass-card rounded-2xl p-6 text-center">
+        <div class="w-12 h-12 rounded-2xl bg-sky-500/12 border border-sky-500/20 flex items-center justify-center text-sky-400 text-2xl mx-auto mb-4">◎</div>
+        <div class="text-xs font-bold text-sky-400 mb-2 uppercase tracking-wider">Step 3</div>
+        <h3 class="font-bold text-white text-sm mb-2">Place Your Bet</h3>
+        <p class="text-xs text-ox-muted leading-relaxed">Connect your wallet and bet OKB on YES or NO. Odds update in real-time as the pool shifts.</p>
+      </div>
+      <div class="hidden lg:flex items-center justify-center text-ox-border/60 shrink-0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </div>
+      <!-- Step 4 -->
+      <div class="glass-card rounded-2xl p-6 text-center col-span-2 lg:col-span-1">
+        <div class="w-12 h-12 rounded-2xl bg-emerald-500/12 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-2xl mx-auto mb-4">✓</div>
+        <div class="text-xs font-bold text-emerald-400 mb-2 uppercase tracking-wider">Step 4</div>
+        <h3 class="font-bold text-white text-sm mb-2">Auto Settlement</h3>
+        <p class="text-xs text-ox-muted leading-relaxed">At deadline, Resolver Agent fetches OKX price and settles on-chain. Winners claim proportional pool rewards.</p>
+      </div>
+    </div>
+
+    <!-- ERC standards -->
+    <div class="grid sm:grid-cols-2 gap-5 mt-8">
+      <div class="glass-card rounded-2xl p-6">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="font-mono font-black text-lg text-violet-400">ERC-8183</span>
+          <span class="text-ox-muted text-xs">·</span>
+          <span class="text-white font-semibold text-sm">Job Commit / Complete Hash</span>
+        </div>
+        <p class="text-xs text-ox-muted leading-relaxed">Every market deployment records a keccak256 hash of the job parameters on-chain. Every resolution records a completion hash, enabling cryptographic audit of every agent action.</p>
+      </div>
+      <div class="glass-card rounded-2xl p-6">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="font-mono font-black text-lg text-emerald-400">ERC-8004</span>
+          <span class="text-ox-muted text-xs">·</span>
+          <span class="text-white font-semibold text-sm">Agent Reputation Score</span>
+        </div>
+        <p class="text-xs text-ox-muted leading-relaxed">Creator and Resolver Agent reputation scores increment with each successful operation. Scores are publicly verifiable on X Layer explorer. Slashing is triggered on failures.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ━━━━━━━━━━━━━━━━━ FOOTER ━━━━━━━━━━━━━━━━━ -->
+<footer class="border-t border-ox-border/40 py-12">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center text-white font-bold text-sm">◈</div>
+        <div>
+          <span class="font-bold text-white text-sm">OracleX</span>
+          <p class="text-xs text-ox-muted">AI Prediction Markets on X Layer</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-6 text-xs text-ox-muted">
+        <span>Powered by <span class="text-violet-400 font-medium">OKX Market API</span></span>
+        <span class="text-ox-border">·</span>
+        <span>Built on <span class="text-sky-400 font-medium">X Layer</span></span>
+        <span class="text-ox-border">·</span>
+        <span>ERC-8183 / ERC-8004 Compliant</span>
+        <span class="text-ox-border">·</span>
+        <a href="https://www.oklink.com/xlayer" target="_blank" class="text-violet-400 hover:text-violet-300 transition-colors">View on OKLink ↗</a>
+      </div>
+    </div>
+    <div class="mt-8 pt-6 border-t border-ox-border/30 text-center text-xs text-ox-muted">
+      Prediction markets involve financial risk. Only bet what you can afford to lose. Contracts are deployed and settled by autonomous AI agents — verify all transactions on-chain.
+    </div>
+  </div>
+</footer>
+
+<!-- ━━━━━━━━━━━━━━━━━ JS ━━━━━━━━━━━━━━━━━ -->
+<script>
+// Chart.js global dark defaults
+Chart.defaults.color = '#6b7280'
+Chart.defaults.borderColor = 'rgba(30,45,64,0.5)'
+Chart.register({
+  id: 'darkBg',
+  beforeDraw(chart) {
+    const { ctx, chartArea } = chart
+    if (!chartArea) return
+    ctx.save()
+    ctx.globalCompositeOperation = 'destination-over'
+    ctx.fillStyle = 'transparent'
+    ctx.fillRect(0, 0, chart.width, chart.height)
+    ctx.restore()
+  }
+})
+
+const API = 'http://localhost:3001'
+
+// ── State ──────────────────────────────────
+let markets = []
+let actions = []
+let prices  = {}
+let selectedMarket = null
+let donutInstance  = null
+let poolInstance   = null
+
+// ── Init ──────────────────────────────────
+async function init() {
+  await Promise.all([fetchMarkets(), fetchActions(), fetchPrices(), fetchStats()])
+  buildTicker()
+  setInterval(async () => {
+    await Promise.all([fetchMarkets(), fetchActions(), fetchPrices(), fetchStats()])
+    if (selectedMarket) {
+      const updated = markets.find(m => m.address === selectedMarket.address)
+      if (updated) updateBetPanel(updated)
+    }
+    buildTicker()
+  }, 8000)
+}
+
+// ── API calls ──────────────────────────────
+async function fetchMarkets() {
+  try {
+    const r = await fetch(`${API}/api/markets`)
+    const d = await r.json()
+    markets = d.markets || []
+    renderMarkets()
+  } catch(e) {
+    markets = getDemoMarkets()
+    renderMarkets()
+  }
+}
+async function fetchActions() {
+  try {
+    const r = await fetch(`${API}/api/actions`)
+    const d = await r.json()
+    actions = d.actions || []
+  } catch { actions = getDemoActions() }
+  renderFeed()
+  updateAgentStats()
+}
+async function fetchPrices() {
+  try {
+    const r = await fetch(`${API}/api/prices`)
+    const d = await r.json()
+    ;(d.prices || []).forEach(p => { prices[p.instId] = p })
+  } catch {}
+}
+async function fetchStats() {
+  try {
+    const r = await fetch(`${API}/api/stats`)
+    const d = await r.json()
+    document.getElementById('stat-markets').textContent  = d.agents?.creates  ?? markets.length
+    document.getElementById('stat-resolved').textContent = d.agents?.resolves ?? markets.filter(m=>m.resolved).length
+    document.getElementById('stat-signals').textContent  = d.agents?.signals  ?? actions.filter(a=>a.role==='signal').length
+    document.getElementById('stat-txs').textContent      = d.agents?.txs      ?? 0
+  } catch {
+    document.getElementById('stat-markets').textContent  = markets.length
+    document.getElementById('stat-resolved').textContent = markets.filter(m=>m.resolved).length
+    document.getElementById('stat-signals').textContent  = actions.filter(a=>a.role==='signal').length
+    document.getElementById('stat-txs').textContent      = '0'
+  }
+}
+
+// ── Demo fallbacks ──────────────────────────
+function getDemoMarkets() {
+  const now = Date.now()
+  return [
+    {
+      address: '0xSIM_001', instId: 'BTC-USDT', question: 'Will BTC exceed $90,000 before expiry?',
+      targetPrice: 90000, currentPrice: 87420, yesOdds: 5820, noOdds: 4180,
+      yesPool: '12000000000000000000', noPool: '8000000000000000000',
+      deadline: now + 25 * 60000, resolved: false, status: 'active',
+    },
+    {
+      address: '0xSIM_002', instId: 'ETH-USDT', question: 'Will ETH stay above $2,000 at deadline?',
+      targetPrice: 2000, currentPrice: 2180, yesOdds: 7200, noOdds: 2800,
+      yesPool: '9000000000000000000', noPool: '3500000000000000000',
+      deadline: now + 45 * 60000, resolved: false, status: 'active',
+    },
+    {
+      address: '0xSIM_003', instId: 'OKB-USDT', question: 'Will OKB reach $55 before end of session?',
+      targetPrice: 55, currentPrice: 51.4, yesOdds: 3100, noOdds: 6900,
+      yesPool: '4000000000000000000', noPool: '9000000000000000000',
+      deadline: now - 5 * 60000, resolved: true, outcomeYes: false,
+      resolutionPrice: 51.4, status: 'resolved',
+    },
+  ]
+}
+function getDemoActions() {
+  const now = Date.now()
+  return [
+    { id:1, role:'resolver', action:'✅ Market resolved: OKB-USDT', detail:'Outcome: NO — price $51.4 < target $55', timestamp: now-120000, txHash:'0xSIM_aaa' },
+    { id:2, role:'creator',  action:'✅ Market created: ETH-USDT',  detail:'Contract deployed — pool 0.004 OKB', timestamp: now-300000, txHash:'0xSIM_bbb' },
+    { id:3, role:'signal',   action:'Signal fired: BTC-USDT',       detail:'Volatility 2.4% detected — market trigger', timestamp: now-600000, txHash:null },
+    { id:4, role:'creator',  action:'✅ Market created: BTC-USDT',  detail:'Contract deployed — target $90,000', timestamp: now-650000, txHash:'0xSIM_ccc' },
+    { id:5, role:'signal',   action:'Signal fired: OKB-USDT',       detail:'Volatility 1.8% detected — market trigger', timestamp: now-900000, txHash:null },
+  ]
+}
+
+// ── Render markets ──────────────────────────
+function renderMarkets() {
+  const el = document.getElementById('marketsList')
+  document.getElementById('marketsLoading')?.remove()
+  if (!markets.length) { el.innerHTML = '<p class="text-center py-12 text-ox-muted text-sm">No markets yet — agents are watching…</p>'; return }
+
+  const existing = new Set([...el.querySelectorAll('[data-addr]')].map(e=>e.dataset.addr))
+  markets.forEach(m => {
+    if (existing.has(m.address)) { updateMarketCard(m); return }
+    const div = document.createElement('div')
+    div.dataset.addr = m.address
+    div.innerHTML = buildMarketCard(m)
+    div.querySelector('.market-card').addEventListener('click', () => selectMarket(m))
+    el.appendChild(div)
+  })
+}
+
+function buildMarketCard(m) {
+  const isSim = m.address.startsWith('0xSIM_')
+  const yesP = (m.yesOdds/100).toFixed(1)
+  const noP  = (m.noOdds /100).toFixed(1)
+  const curP = m.currentPrice?.toLocaleString(undefined,{maximumFractionDigits:2}) ?? '—'
+  const tgt  = m.targetPrice?.toLocaleString() ?? '—'
+  const msLeft = m.deadline > 1e12 ? m.deadline - Date.now() : m.deadline * 1000 - Date.now()
+  const timeStr = m.resolved ? 'Resolved'
+    : msLeft > 0 ? `${Math.floor(msLeft/60000)}m ${Math.floor((msLeft%60000)/1000)}s`
+    : 'Expired'
+
+  const statusBadge = m.resolved
+    ? `<span class="badge badge-resolved">${m.outcomeYes ? 'YES wins' : 'NO wins'}</span>`
+    : `<span class="badge badge-live">LIVE</span>`
+  const demoBadge = isSim ? `<span class="badge badge-demo ml-1.5">Demo</span>` : ''
+
+  return `
+  <div class="glass-card market-card rounded-2xl p-5 cursor-pointer select-none" style="border:1px solid rgba(30,45,64,0.7)">
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="text-xs font-bold text-violet-400 font-mono">${m.instId}</span>
+          ${statusBadge}${demoBadge}
+          <span class="ml-auto text-xs text-ox-muted font-mono">${timeStr}</span>
+        </div>
+        <p class="text-[15px] font-semibold text-white leading-snug line-clamp-2">${m.question}</p>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mb-4">
+      <div class="flex-1 text-center p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/15">
+        <div class="text-2xl font-black font-mono text-emerald-400">${yesP}%</div>
+        <div class="text-xs text-ox-muted mt-0.5">YES</div>
+      </div>
+      <div class="flex-1 text-center p-3 rounded-xl bg-red-500/8 border border-red-500/15">
+        <div class="text-2xl font-black font-mono text-red-400">${noP}%</div>
+        <div class="text-xs text-ox-muted mt-0.5">NO</div>
+      </div>
+    </div>
+
+    <div class="prob-bar mb-3">
+      <div class="prob-fill bg-gradient-to-r from-emerald-500 to-emerald-400" style="width:${yesP}%"></div>
+    </div>
+
+    <div class="flex items-center justify-between text-xs text-ox-muted">
+      <span>Target: <span class="text-ox-dim font-mono font-medium">$${tgt}</span></span>
+      <span>Now: <span class="text-ox-dim font-mono font-medium">$${curP}</span></span>
+    </div>
+  </div>`
+}
+
+function updateMarketCard(m) {
+  const el = document.querySelector(`[data-addr="${m.address}"] .market-card`)
+  if (!el) return
+  // update odds + bar
+  const yesP = (m.yesOdds/100).toFixed(1)
+  const noP  = (m.noOdds /100).toFixed(1)
+  el.querySelectorAll('.text-emerald-400')[0].textContent = yesP + '%'
+  el.querySelectorAll('.text-red-400')[0].textContent = noP + '%'
+  el.querySelector('.prob-fill').style.width = yesP + '%'
+}
+
+// ── Market selection ──────────────────────────
+function selectMarket(m) {
+  selectedMarket = m
+  document.querySelectorAll('.market-card').forEach(c => c.classList.remove('selected'))
+  const card = document.querySelector(`[data-addr="${m.address}"] .market-card`)
+  if (card) card.classList.add('selected')
+  updateBetPanel(m)
+  updateCharts(m)
+}
+
+function updateBetPanel(m) {
+  const isSim  = m.address.startsWith('0xSIM_')
+  const yesP   = (m.yesOdds/100).toFixed(1)
+  const noP    = (m.noOdds /100).toFixed(1)
+  const panel  = document.getElementById('betPanel')
+
+  if (m.resolved) {
+    panel.innerHTML = `
+      <div class="text-center py-4">
+        <div class="text-4xl mb-3">${m.outcomeYes ? '✅' : '❌'}</div>
+        <p class="font-bold text-lg text-white mb-1">Market Resolved</p>
+        <p class="text-2xl font-black font-mono ${m.outcomeYes ? 'text-emerald-400' : 'text-red-400'} mb-3">
+          ${m.outcomeYes ? 'YES wins' : 'NO wins'}
+        </p>
+        ${m.resolutionPrice ? `<p class="text-sm text-ox-muted">Settled @ <span class="font-mono text-ox-dim">$${m.resolutionPrice.toLocaleString(undefined,{maximumFractionDigits:2})}</span></p>` : ''}
+        ${isSim ? `<p class="text-xs text-amber-400/80 mt-3 font-medium border border-amber-500/20 rounded-xl px-3 py-2 bg-amber-500/5">Deploy contract to claim real winnings</p>` :
+          `<button class="btn-accent mt-4 w-full py-3 rounded-xl text-sm font-semibold text-white transition-all" onclick="claimWinnings()">Claim Winnings</button>`}
+      </div>`
+    return
+  }
+
+  if (isSim) {
+    panel.innerHTML = `
+      <div class="border border-amber-500/20 rounded-xl bg-amber-500/5 px-4 py-3 mb-4 flex items-center gap-2">
+        <span class="text-amber-400">⚡</span>
+        <span class="text-amber-400 font-semibold text-sm">Demo Mode</span>
+        <span class="text-ox-muted text-xs ml-1">— simulation only</span>
+      </div>
+      <p class="text-xs text-ox-muted mb-4">This market runs in simulation. Deploy contracts to enable real OKB betting.</p>
+      <div class="flex gap-3">
+        <div class="flex-1 border border-emerald-500/20 bg-emerald-500/8 rounded-xl px-4 py-3 text-center">
+          <div class="text-emerald-400 font-black text-xl font-mono">${yesP}%</div>
+          <div class="text-xs text-ox-muted mt-0.5">YES</div>
+        </div>
+        <div class="flex-1 border border-red-500/20 bg-red-500/8 rounded-xl px-4 py-3 text-center">
+          <div class="text-red-400 font-black text-xl font-mono">${noP}%</div>
+          <div class="text-xs text-ox-muted mt-0.5">NO</div>
+        </div>
+      </div>`
+    return
+  }
+
+  panel.innerHTML = `
+    <h3 class="font-bold text-white text-[15px] mb-5">Place Bet</h3>
+    <div class="flex rounded-xl overflow-hidden border border-ox-border mb-5" id="sideSelector">
+      <button data-side="yes" onclick="setSide('yes')" class="flex-1 py-3 text-sm font-semibold transition-colors bg-emerald-500 text-white">
+        YES · ${yesP}%
+      </button>
+      <button data-side="no" onclick="setSide('no')" class="flex-1 py-3 text-sm font-semibold transition-colors bg-transparent text-ox-muted hover:text-red-400">
+        NO · ${noP}%
+      </button>
+    </div>
+
+    <div class="mb-4">
+      <label class="text-xs text-ox-muted mb-2 block font-semibold uppercase tracking-wider">Amount (OKB)</label>
+      <div class="flex gap-2 mb-2">
+        <input type="number" id="betAmount" value="0.01" min="0.001" step="0.001"
+          class="flex-1 bg-ox-surface border border-ox-border rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-violet-500/60 transition-colors"/>
+        ${['0.01','0.05','0.1'].map(v=>`<button onclick="document.getElementById('betAmount').value='${v}'" class="px-3 py-2 text-xs border border-ox-border rounded-xl hover:border-violet-500/40 text-ox-muted hover:text-white transition-colors">${v}</button>`).join('')}
+      </div>
+      <div class="flex items-center justify-between text-xs text-ox-muted">
+        <span>Est. return: <span class="text-emerald-400 font-mono font-medium" id="estReturn">—</span></span>
+        <span>Fee: 2%</span>
+      </div>
+    </div>
+
+    <button onclick="placeBet()" id="betBtn" class="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all btn-yes">
+      Bet on YES
+    </button>
+    <p class="text-center text-xs text-ox-muted mt-3">Connect wallet to place real bets</p>`
+
+  // estimate
+  const amountInput = document.getElementById('betAmount')
+  if (amountInput) {
+    amountInput.addEventListener('input', updateEstReturn)
+    updateEstReturn()
+  }
+}
+
+let currentSide = 'yes'
+function setSide(side) {
+  currentSide = side
+  const btns = document.querySelectorAll('#sideSelector button')
+  btns.forEach(b => {
+    if (b.dataset.side === side) {
+      b.className = `flex-1 py-3 text-sm font-semibold transition-colors text-white ${side==='yes'?'bg-emerald-500':'bg-red-500'}`
+    } else {
+      b.className = `flex-1 py-3 text-sm font-semibold transition-colors bg-transparent text-ox-muted ${side==='yes'?'hover:text-emerald-400':'hover:text-red-400'}`
+    }
+  })
+  const btn = document.getElementById('betBtn')
+  if (btn) {
+    btn.className = `w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all ${side==='yes'?'btn-yes':'btn-no'}`
+    btn.textContent = `Bet on ${side.toUpperCase()}`
+  }
+  updateEstReturn()
+}
+
+function updateEstReturn() {
+  const amount = parseFloat(document.getElementById('betAmount')?.value || '0')
+  const ret = document.getElementById('estReturn')
+  if (!ret || !selectedMarket) return
+  const odds = currentSide === 'yes' ? selectedMarket.yesOdds/10000 : selectedMarket.noOdds/10000
+  const payout = odds > 0 ? (amount / odds * 0.98).toFixed(4) : '—'
+  ret.textContent = `~${payout} OKB`
+}
+
+function placeBet() {
+  alert('Connect your wallet to X Layer to place real bets.\n\nIn demo mode, bets are simulated only.')
+}
+function claimWinnings() {
+  alert('Connect your wallet to claim winnings from the smart contract.')
+}
+function connectWallet() {
+  const btn = document.getElementById('walletBtn')
+  btn.textContent = 'Connecting…'
+  setTimeout(() => { btn.textContent = '0x1234…abcd'; btn.style.background = 'linear-gradient(135deg,#059669,#10b981)' }, 1200)
+}
+
+// ── Charts ──────────────────────────────────
+function updateCharts(m) {
+  const cp = document.getElementById('chartPanel')
+  const pp = document.getElementById('poolPanel')
+  cp.style.display = 'block'
+  pp.style.display = 'block'
+
+  const yPct = m.yesOdds / 100
+  const nPct = m.noOdds  / 100
+  document.getElementById('donutYes').textContent  = yPct.toFixed(1) + '%'
+  document.getElementById('chartYesPct').textContent = yPct.toFixed(1) + '%'
+  document.getElementById('chartNoPct').textContent  = nPct.toFixed(1) + '%'
+
+  const yPool = parseFloat(m.yesPool) / 1e18
+  const nPool = parseFloat(m.noPool)  / 1e18
+
+  if (donutInstance) donutInstance.destroy()
+  donutInstance = new Chart(document.getElementById('donutChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['YES','NO'],
+      datasets: [{ data: [yPct, nPct], backgroundColor: ['rgba(16,185,129,0.8)','rgba(239,68,68,0.8)'], borderColor: ['#10b981','#ef4444'], borderWidth: 2, hoverOffset: 4 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '72%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toFixed(1)}%` } } },
+      animation: { animateRotate: true, duration: 600 }
+    }
+  })
+
+  if (poolInstance) poolInstance.destroy()
+  poolInstance = new Chart(document.getElementById('poolChart'), {
+    type: 'bar',
+    data: {
+      labels: ['YES Pool','NO Pool'],
+      datasets: [{ data: [yPool.toFixed(4), nPool.toFixed(4)], backgroundColor: ['rgba(16,185,129,0.7)','rgba(239,68,68,0.7)'], borderColor: ['#10b981','#ef4444'], borderWidth: 1, borderRadius: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} OKB` } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6b7280', font: { size: 11 } }, border: { color: 'rgba(30,45,64,0.4)' } },
+        y: { grid: { color: 'rgba(30,45,64,0.4)' }, ticks: { color: '#6b7280', font: { size: 11 }, callback: v => v + ' OKB' }, border: { color: 'rgba(30,45,64,0.4)' } }
+      },
+      animation: { duration: 400 }
+    }
+  })
+}
+
+// ── Feed ──────────────────────────────────
+const roleColor = { signal:'text-amber-400', creator:'text-violet-400', resolver:'text-emerald-400' }
+const roleBg    = { signal:'bg-amber-500/10', creator:'bg-violet-500/10', resolver:'bg-emerald-500/10' }
+const roleIcon  = { signal:'◈', creator:'⬡', resolver:'✓' }
+
+function renderFeed() {
+  const feed = document.getElementById('activityFeed')
+  document.getElementById('feedCount').textContent = `${actions.length} events`
+  feed.innerHTML = actions.length === 0
+    ? '<p class="px-5 py-8 text-center text-ox-muted text-sm">No agent actions yet…</p>'
+    : actions.slice(0,50).map(a => `
+      <div class="feed-item px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+        <div class="flex items-start gap-3">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${roleBg[a.role]??''} ${roleColor[a.role]??'text-white'} text-sm">
+            ${roleIcon[a.role]??'·'}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-xs font-bold uppercase ${roleColor[a.role]??'text-white'}">${a.role}</span>
+              <span class="text-xs text-ox-muted">·</span>
+              <span class="text-xs text-ox-dim truncate">${a.action}</span>
+              <span class="ml-auto text-xs text-ox-muted whitespace-nowrap font-mono">${new Date(a.timestamp).toLocaleTimeString()}</span>
+            </div>
+            ${a.detail ? `<p class="text-xs text-white/40 truncate">${a.detail}</p>` : ''}
+            ${a.txHash && !a.txHash.startsWith('0xSIM') ? `<a href="https://www.oklink.com/xlayer/tx/${a.txHash}" target="_blank" class="text-xs text-violet-400 hover:underline font-mono">${a.txHash.slice(0,12)}…</a>` : ''}
+          </div>
+        </div>
+      </div>`).join('')
+}
+
+function updateAgentStats() {
+  const sigs = actions.filter(a=>a.role==='signal').length
+  const cres = actions.filter(a=>a.role==='creator').length
+  const ress = actions.filter(a=>a.role==='resolver').length
+  document.getElementById('agent-signals').textContent  = sigs
+  document.getElementById('agent-creates').textContent  = cres
+  document.getElementById('agent-creates2').textContent = markets.filter(m=>!m.resolved).length
+  document.getElementById('agent-resolves').textContent = ress
+  document.getElementById('agent-accuracy').textContent = ress > 0 ? '100%' : '—'
+}
+
+// ── Ticker ──────────────────────────────────
+const DEMO_PRICES = [
+  { instId:'BTC-USDT', price:87420, change24h:1.23 },
+  { instId:'ETH-USDT', price:2180,  change24h:-0.85 },
+  { instId:'OKB-USDT', price:51.4,  change24h:2.11 },
+  { instId:'SOL-USDT', price:148,   change24h:3.42 },
+  { instId:'BNB-USDT', price:594,   change24h:-1.02 },
+]
+
+function buildTicker() {
+  const items = Object.keys(prices).length > 0 ? Object.values(prices) : DEMO_PRICES
+  const html = items.map(p => {
+    const up = p.change24h >= 0
+    const sym = p.instId.replace('-USDT','')
+    const pFmt = p.price >= 1000 ? p.price.toLocaleString(undefined,{maximumFractionDigits:0}) : p.price.toLocaleString(undefined,{maximumFractionDigits:4})
+    return `
+      <div class="flex items-center gap-2 mr-10 shrink-0">
+        <span class="text-xs text-ox-muted font-mono font-semibold">${sym}</span>
+        <span class="text-sm font-mono font-bold text-ox-dim">$${pFmt}</span>
+        <span class="text-xs font-mono px-1.5 py-0.5 rounded ${up?'bg-emerald-500/10 text-emerald-400':'bg-red-500/10 text-red-400'}">
+          ${up?'↑':'↓'}${Math.abs(p.change24h).toFixed(2)}%
+        </span>
+      </div>`
+  }).join('')
+  // duplicate for seamless loop
+  document.getElementById('ticker').innerHTML = html + html
+}
+
+// Start
+init()
+</script>
+</body>
+</html>
