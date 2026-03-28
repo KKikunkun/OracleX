@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: oraclex-agents
+    runtime: node
+    buildCommand: npm install -g pnpm && pnpm install --filter agents && cd agents && pnpm build || true
+    startCommand: cd agents && npx tsx src/index.ts
+    envVars:
+      - key: NODE_ENV
+        value: production
