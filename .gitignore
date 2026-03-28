@@ -13,3 +13,5 @@ coverage/
 tsconfig.tsbuildinfo
 .agents/
 .claude/skills/
+skills/
+skills-lock.json
