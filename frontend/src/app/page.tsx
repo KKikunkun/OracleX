@@ -151,7 +151,7 @@ export default function HomePage() {
               { label: 'Markets',  value: stats.totalMarkets    ?? '—' },
               { label: 'Active',   value: stats.activeMarkets   ?? '—' },
               { label: 'Resolved', value: stats.resolvedMarkets ?? '—' },
-              { label: 'Volume',   value: stats.totalVolume ? `${parseFloat(stats.totalVolume).toFixed(3)} OKB` : '—' },
+              { label: 'TVL',      value: stats.totalVolume ? `${parseFloat(stats.totalVolume).toFixed(4)} OKB` : '—' },
             ].map(s => (
               <div key={s.label} className="px-6 py-4 text-center">
                 <p className="text-sm text-oracle-muted">{s.label}</p>
@@ -244,7 +244,7 @@ export default function HomePage() {
             <span>OracleX — AI Prediction Markets on X Layer</span>
           </div>
           <div className="flex items-center gap-4">
-            <a href="https://www.oklink.com/xlayer/address/0x5D1b4aaC3556E8fbbfa3B2838bD952c7F9857f7a" target="_blank" rel="noopener noreferrer" className="hover:text-oracle-accent transition-colors">Factory Contract</a>
+            <a href="https://www.oklink.com/xlayer/address/0x62a42AE83304eBa619d71f5f86B87E665A8D7c1E" target="_blank" rel="noopener noreferrer" className="hover:text-oracle-accent transition-colors">Factory Contract</a>
             <span className="text-oracle-border">|</span>
             <a href="https://x.com/OracleX_Agnet" target="_blank" rel="noopener noreferrer" className="hover:text-oracle-accent transition-colors">@OracleX_Agnet</a>
             <span className="text-oracle-border">|</span>

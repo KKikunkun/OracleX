@@ -23,6 +23,7 @@ export interface MarketInfo {
   resolveTxHash?:  string
   aiReasoning?:    string
   aiAnalysis?:     string
+  contractBalance?: string
 }
 
 export interface AgentAction {

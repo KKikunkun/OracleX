@@ -49,7 +49,7 @@ const isSimAddress = (addr: string) => addr.startsWith('0xSIM_')
 export function MarketCard({ m }: { m: MarketInfo }) {
   const yesOdds   = (m.yesOdds / 100).toFixed(1)
   const noOdds    = (m.noOdds  / 100).toFixed(1)
-  const totalPool = (parseFloat(m.yesPool) / 1e18 + parseFloat(m.noPool) / 1e18).toFixed(4)
+  const tvl = m.contractBalance ? (parseFloat(m.contractBalance) / 1e18).toFixed(4) : '0.0000'
 
   return (
     <Link href={`/market/${m.address}`} className="block group">
@@ -128,7 +128,7 @@ export function MarketCard({ m }: { m: MarketInfo }) {
 
         {/* Footer */}
         <div className="flex items-center justify-between text-xs" style={{ color: '#64748B' }}>
-          <span>Pool: <span className="text-oracle-subtext font-medium">{totalPool} OKB</span></span>
+          <span>TVL: <span className="text-oracle-subtext font-medium">{tvl} OKB</span></span>
           {m.currentPrice && (
             <span className="font-mono" style={{ color: '#94A3B8' }}>
               ${m.currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}

@@ -11,3 +11,5 @@ coverage/
 .data/
 .DS_Store
 tsconfig.tsbuildinfo
+.agents/
+.claude/skills/

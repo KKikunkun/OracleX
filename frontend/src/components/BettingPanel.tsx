@@ -1,17 +1,75 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseEther } from 'viem'
 import type { MarketInfo } from '@/lib/api'
+import { API_BASE } from '@/lib/api'
 
 const MARKET_ABI = [
   { name: 'buyYes',       type: 'function', stateMutability: 'payable',    inputs: [], outputs: [] },
   { name: 'buyNo',        type: 'function', stateMutability: 'payable',    inputs: [], outputs: [] },
   { name: 'claimWinnings',type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+  { name: 'refund',       type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+  { name: 'totalYesMinted',type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'totalNoMinted', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 ] as const
 
 const isSimAddress = (addr: string) => addr.startsWith('0xSIM_')
+
+function AgenticBetButton({ market, side, amount }: { market: MarketInfo; side: string; amount: string }) {
+  const [loading, setLoading]     = useState(false)
+  const [result, setResult]       = useState<{ ok: boolean; txHash?: string; error?: string } | null>(null)
+  const [wallet, setWallet]       = useState<{ available: boolean; email?: string; address?: string } | null>(null)
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/agentic-wallet/status`).then(r => r.json()).then(setWallet).catch(() => setWallet({ available: false }))
+  }, [])
+
+  if (!wallet || !wallet.available) return null
+
+  async function handleAgenticBet() {
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/agentic-bet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ marketAddress: market.address, side, amount }),
+      })
+      const data = await res.json()
+      setResult(data)
+    } catch (err) {
+      setResult({ ok: false, error: 'Network error' })
+    }
+    setLoading(false)
+  }
+
+  if (result?.ok) {
+    return (
+      <div className="text-center text-oracle-yes text-sm py-2 font-medium">
+        Agentic Wallet bet confirmed!{' '}
+        {result.txHash && (
+          <a href={`https://www.oklink.com/xlayer/tx/${result.txHash}`} target="_blank" rel="noopener noreferrer" className="underline">View tx</a>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <button
+        onClick={handleAgenticBet}
+        disabled={loading || !amount || parseFloat(amount) <= 0}
+        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+        style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#A78BFA' }}
+      >
+        {loading ? 'Signing via TEE...' : `Agentic Wallet: ${amount} OKB on ${side.toUpperCase()}`}
+      </button>
+      {result?.error && <p className="text-xs text-oracle-no mt-1">{result.error}</p>}
+    </div>
+  )
+}
 
 // CPMM price impact calculator
 function calcCPMM(yesPool: number, noPool: number, amountIn: number, side: 'yes' | 'no') {
@@ -42,6 +100,9 @@ export function BettingPanel({ market }: { market: MarketInfo }) {
 
   const { writeContract, data: txHash, isPending, error } = useWriteContract()
   const { isLoading: confirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
+  const { address: userAddress } = useAccount()
+
+  // Trade recording is handled server-side via chain polling (resolver auto-detect)
 
   // CPMM price impact preview
   const preview = useMemo(() => {
@@ -90,17 +151,26 @@ export function BettingPanel({ market }: { market: MarketInfo }) {
         )}
         {isConnected ? (
           isSuccess ? (
-            <p className="text-oracle-yes text-sm font-medium">Claimed!{' '}
+            <p className="text-oracle-yes text-sm font-medium">Success!{' '}
               {txHash && <a href={`https://www.oklink.com/xlayer/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="underline">View tx</a>}
             </p>
           ) : (
-            <button
-              onClick={() => writeContract({ address: market.address as `0x${string}`, abi: MARKET_ABI, functionName: 'claimWinnings' })}
-              disabled={isPending || confirming}
-              className="w-full py-3 rounded-lg text-sm font-semibold bg-oracle-gold hover:bg-oracle-gold/90 text-white transition-colors disabled:opacity-50"
-            >
-              {isPending ? 'Confirm...' : confirming ? 'Claiming...' : 'Claim Winnings'}
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => writeContract({ address: market.address as `0x${string}`, abi: MARKET_ABI, functionName: 'claimWinnings' })}
+                disabled={isPending || confirming}
+                className="w-full py-3 rounded-lg text-sm font-semibold bg-oracle-gold hover:bg-oracle-gold/90 text-white transition-colors disabled:opacity-50"
+              >
+                {isPending ? 'Confirm...' : confirming ? 'Claiming...' : 'Claim Winnings'}
+              </button>
+              <button
+                onClick={() => writeContract({ address: market.address as `0x${string}`, abi: MARKET_ABI, functionName: 'refund' })}
+                disabled={isPending || confirming}
+                className="w-full py-2 rounded-lg text-xs font-medium border border-oracle-border text-oracle-muted hover:text-oracle-text transition-colors disabled:opacity-50"
+              >
+                Refund (if no counterparty)
+              </button>
+            </div>
           )
         ) : (
           <p className="text-sm text-oracle-muted text-center">Connect wallet to claim</p>
@@ -212,9 +282,17 @@ export function BettingPanel({ market }: { market: MarketInfo }) {
         </div>
       )}
 
-      {/* Action button */}
+      {/* Action buttons */}
       {!isConnected ? (
-        <p className="text-center text-sm text-oracle-muted py-2">Connect wallet to bet</p>
+        <div className="space-y-2">
+          <AgenticBetButton market={market} side={side} amount={amount} />
+          <div className="relative flex items-center gap-2 py-1">
+            <div className="flex-1 h-px bg-oracle-border" />
+            <span className="text-xs text-oracle-muted">or</span>
+            <div className="flex-1 h-px bg-oracle-border" />
+          </div>
+          <p className="text-center text-sm text-oracle-muted">Connect OKX Wallet to bet manually</p>
+        </div>
       ) : isSuccess ? (
         <div className="text-center text-oracle-yes text-sm py-2 font-medium">
           Bet confirmed!{' '}
@@ -225,15 +303,18 @@ export function BettingPanel({ market }: { market: MarketInfo }) {
           )}
         </div>
       ) : (
-        <button
-          onClick={placeBet}
-          disabled={isPending || confirming}
-          className={`w-full py-3 rounded-lg text-sm font-semibold transition-colors ${
-            side === 'yes' ? 'bg-oracle-yes hover:bg-oracle-yes/90 text-white' : 'bg-oracle-no hover:bg-oracle-no/90 text-white'
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
-        >
-          {isPending ? 'Confirm in wallet...' : confirming ? 'Confirming...' : `Bet ${amount} OKB on ${side.toUpperCase()}`}
-        </button>
+        <div className="space-y-2">
+          <button
+            onClick={placeBet}
+            disabled={isPending || confirming}
+            className={`w-full py-3 rounded-lg text-sm font-semibold transition-colors ${
+              side === 'yes' ? 'bg-oracle-yes hover:bg-oracle-yes/90 text-white' : 'bg-oracle-no hover:bg-oracle-no/90 text-white'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {isPending ? 'Confirm in wallet...' : confirming ? 'Confirming...' : `Bet ${amount} OKB on ${side.toUpperCase()}`}
+          </button>
+          <AgenticBetButton market={market} side={side} amount={amount} />
+        </div>
       )}
 
       {error && (

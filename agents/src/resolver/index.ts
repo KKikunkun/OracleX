@@ -8,6 +8,7 @@ import { getSettlementPrice, getCurrentPrice, toContractPrice } from '../shared/
 import { withRetry } from '../shared/retry.js'
 import { runClaudeResolverAnalysis } from '../shared/claudeAgent.js'
 import { getOnchainOKBPrice } from '../shared/onchainos.js'
+import { signAndBroadcast } from '../shared/onchainGateway.js'
 import type { MarketInfo, AgentAction } from '../shared/types.js'
 
 // Maximum allowed divergence between CEX and DEX price (5%)
@@ -29,7 +30,8 @@ export class ResolverAgent {
 
   constructor(
     private onAction:   (action: Omit<AgentAction, 'id' | 'timestamp'>) => void,
-    private onResolved: (address: string, finalPrice: number, outcomeYes: boolean, txHash?: string) => void
+    private onResolved: (address: string, finalPrice: number, outcomeYes: boolean, txHash?: string) => void,
+    private onMarketUpdated?: (market: MarketInfo) => void,
   ) {}
 
   async init() {
@@ -53,9 +55,14 @@ export class ResolverAgent {
     for (const market of markets) {
       if (market.resolved || market.status === 'resolved') continue
       if (market.deadline > now) {
-        // Update live price for active markets
         await this.updateLivePrice(market)
         continue
+      }
+
+      // Mark as closed immediately (persisted)
+      if (market.status !== 'closed') {
+        market.status = 'closed'
+        this.onMarketUpdated?.(market)
       }
 
       // Market past deadline — time to resolve
@@ -197,19 +204,91 @@ export class ResolverAgent {
     }).catch(() => {/* silently ignore analysis errors */})
   }
 
-  // ── Update live price for display ────────────────────────────
+  // ── Update live price + on-chain pools for display ───────────
+
+  // Track previous pool state for trade detection
+  private prevPools = new Map<string, { yes: string; no: string }>()
 
   private async updateLivePrice(market: MarketInfo): Promise<void> {
     const ticker = await getCurrentPrice(market.instId)
     if (ticker) market.currentPrice = ticker.price
+
+    // Refresh pools/odds from chain + detect new trades
+    if (!this.simMode && this.wallet && !market.address.startsWith('0xSIM')) {
+      try {
+        const POOL_ABI = [
+          'function yesPool() view returns (uint256)',
+          'function noPool() view returns (uint256)',
+          'function getOdds() view returns (uint256 yesOdds, uint256 noOdds)',
+        ]
+        const contract = new ethers.Contract(market.address, POOL_ABI, this.wallet.provider!)
+        const [yesPool, noPool, odds] = await Promise.all([
+          contract.yesPool(), contract.noPool(), contract.getOdds(),
+        ])
+
+        const newYes = yesPool.toString()
+        const newNo  = noPool.toString()
+        const prev   = this.prevPools.get(market.address)
+
+        // Detect pool change → auto-record trade
+        if (prev && (prev.yes !== newYes || prev.no !== newNo)) {
+          const oldYes = BigInt(prev.yes)
+          const oldNo  = BigInt(prev.no)
+          const curYes = BigInt(newYes)
+          const curNo  = BigInt(newNo)
+
+          const side = curYes > oldYes ? 'YES' : 'NO'
+          const amountIn = side === 'YES'
+            ? ethers.formatEther(curYes - oldYes)
+            : ethers.formatEther(curNo - oldNo)
+          const sharesOut = side === 'YES'
+            ? ethers.formatEther(oldNo - curNo)
+            : ethers.formatEther(oldYes - curYes)
+          const total = Number(curYes + curNo)
+          const priceAfter = side === 'YES'
+            ? ((Number(curNo) / total) * 100).toFixed(1)
+            : ((Number(curYes) / total) * 100).toFixed(1)
+
+          // POST to trades API
+          try {
+            const { config } = await import('../shared/config.js')
+            await fetch(`http://localhost:${config.PORT}/api/markets/${market.address.toLowerCase()}/trades`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                user: 'on-chain',
+                side,
+                amountIn,
+                sharesOut,
+                priceAfter,
+                source: 'Auto-detected (chain)',
+              }),
+            })
+          } catch {}
+
+          this.onAction({
+            role: 'resolver',
+            action: `Trade detected: ${side} ${amountIn} OKB`,
+            detail: `${market.instId} | ${side} price after: ${priceAfter}%`,
+            marketAddress: market.address,
+          })
+        }
+
+        this.prevPools.set(market.address, { yes: newYes, no: newNo })
+        market.yesPool = newYes
+        market.noPool  = newNo
+        market.yesOdds = Number(odds.yesOdds)
+        market.noOdds  = Number(odds.noOdds)
+      } catch {}
+    }
   }
 
   // ── Start polling loop ────────────────────────────────────────
 
   start(getMarkets: () => MarketInfo[]) {
-    // Poll every 5 minutes — checks deadlines and updates live prices
-    const interval = 5 * 60 * 1000
-    console.log(`[Resolver] Started — polling every 5min`)
+    // Poll every 1 minute — checks deadlines, updates prices, detects trades
+    const interval = 60 * 1000
+    console.log(`[Resolver] Started — polling every 1min`)
     setInterval(() => this.checkAndResolve(getMarkets()), interval)
     setTimeout(() => this.checkAndResolve(getMarkets()), 5_000)
   }

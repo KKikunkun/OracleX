@@ -140,7 +140,8 @@ export interface WalletBalance {
 export async function getWalletBalance(address: string): Promise<WalletBalance[]> {
   try {
     const { ethers } = await import('ethers')
-    const provider = new ethers.JsonRpcProvider('https://rpc.xlayer.tech')
+    const { config } = await import('./config.js')
+    const provider = new ethers.JsonRpcProvider(config.RPC_URL)
     const balance = await provider.getBalance(address)
     const balanceOKB = ethers.formatEther(balance)
 

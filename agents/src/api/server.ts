@@ -10,6 +10,14 @@ import { getCurrentPrice } from '../shared/okxApi.js'
 import { config } from '../shared/config.js'
 import { getDexSwapQuote, getWalletBalance, getOnchainOSStatus, getOnchainOKBPrice, XLAYER_TOKENS } from '../shared/onchainos.js'
 import { handleX402Request } from '../shared/x402.js'
+import { ethers } from 'ethers'
+
+// Shared RPC provider — reuse across requests
+let _provider: ethers.JsonRpcProvider | null = null
+function getProvider(): ethers.JsonRpcProvider {
+  if (!_provider) _provider = new ethers.JsonRpcProvider(config.RPC_URL)
+  return _provider
+}
 
 // ── Rate limiter (in-memory, per IP) ────────────────────────
 
@@ -109,10 +117,16 @@ interface X402Hooks {
   getServiceCatalog: () => any
 }
 
+interface DemoHooks {
+  deployMarket: (params: any) => Promise<any>
+  logAction:    (action: any) => void
+}
+
 export function createApiServer(
   getMarkets: () => MarketInfo[],
   getActions: () => AgentAction[],
   x402?: X402Hooks,
+  demo?: DemoHooks,
 ) {
   const app = express()
   app.use(cors())
@@ -121,10 +135,28 @@ export function createApiServer(
 
   // ── Markets ────────────────────────────────────────────────
 
-  app.get('/api/markets', (_req, res) => {
+  app.get('/api/markets', async (_req, res) => {
     const markets = getMarkets()
+
+    // Live refresh pools from chain for real markets
+    try {
+      const provider = getProvider()
+      const abi = ['function yesPool() view returns (uint256)', 'function noPool() view returns (uint256)', 'function getOdds() view returns (uint256, uint256)']
+      await Promise.all(markets.filter(m => !m.address.startsWith('0xSIM')).map(async m => {
+        try {
+          const c = new ethers.Contract(m.address, abi, provider)
+          const [yp, np, odds, bal] = await Promise.all([
+            c.yesPool(), c.noPool(), c.getOdds(), provider.getBalance(m.address),
+          ])
+          m.yesPool = yp.toString(); m.noPool = np.toString()
+          m.yesOdds = Number(odds[0]); m.noOdds = Number(odds[1])
+          m.contractBalance = bal.toString()
+        } catch {}
+      }))
+    } catch {}
+
     const totalVolume = markets.reduce((sum, m) => {
-      return sum + (parseFloat(m.yesPool) + parseFloat(m.noPool)) / 1e18
+      return sum + parseFloat(m.contractBalance || '0') / 1e18
     }, 0)
     const stats = {
       totalMarkets:    markets.length,
@@ -135,11 +167,30 @@ export function createApiServer(
     res.json({ markets, stats })
   })
 
-  app.get('/api/markets/:address', (req, res) => {
+  app.get('/api/markets/:address', async (req, res) => {
     const market = getMarkets().find(m =>
       m.address.toLowerCase() === req.params.address.toLowerCase()
     )
     if (!market) { res.status(404).json({ error: 'Market not found' }); return }
+
+    // Live refresh pools from chain if real contract
+    if (!market.address.startsWith('0xSIM')) {
+      try {
+        const provider = getProvider()
+        const abi = [
+          'function yesPool() view returns (uint256)',
+          'function noPool() view returns (uint256)',
+          'function getOdds() view returns (uint256 yesOdds, uint256 noOdds)',
+        ]
+        const c = new ethers.Contract(market.address, abi, provider)
+        const [yp, np, odds] = await Promise.all([c.yesPool(), c.noPool(), c.getOdds()])
+        market.yesPool = yp.toString()
+        market.noPool  = np.toString()
+        market.yesOdds = Number(odds.yesOdds)
+        market.noOdds  = Number(odds.noOdds)
+      } catch {}
+    }
+
     res.json({ market })
   })
 
@@ -218,6 +269,62 @@ export function createApiServer(
     res.json({ catalog: x402.getServiceCatalog() })
   })
 
+  // ── Market trades ────────────────────────────────────────────
+  // Tracked in-memory + persisted. Also accepts POST from external sources.
+
+  const tradesMap = new Map<string, any[]>()
+
+  // Load from disk
+  try {
+    const fs = require('fs')
+    const pathMod = require('path')
+    const tradesFile = pathMod.resolve(process.cwd(), '../.data/trades.json')
+    if (fs.existsSync(tradesFile)) {
+      const data = JSON.parse(fs.readFileSync(tradesFile, 'utf-8'))
+      for (const [addr, trades] of Object.entries(data)) {
+        tradesMap.set(addr, trades as any[])
+      }
+    }
+  } catch {}
+
+  function saveTrades() {
+    try {
+      const fs = require('fs')
+      const pathMod = require('path')
+      const dir = pathMod.resolve(process.cwd(), '../.data')
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      const obj: Record<string, any[]> = {}
+      for (const [k, v] of tradesMap) obj[k] = v
+      fs.writeFileSync(pathMod.join(dir, 'trades.json'), JSON.stringify(obj, null, 2))
+    } catch {}
+  }
+
+  app.get('/api/markets/:address/trades', (req, res) => {
+    const trades = tradesMap.get(req.params.address.toLowerCase()) || []
+    res.json({ trades })
+  })
+
+  app.post('/api/markets/:address/trades', (req, res) => {
+    // Internal only — requires token or localhost
+    const token = req.get('x-internal-token')
+    const ip = req.ip || req.socket.remoteAddress || ''
+    const isLocal = ip.includes('127.0.0.1') || ip.includes('::1')
+    if (!isLocal && token !== (process.env.INTERNAL_API_TOKEN || 'oraclex-internal')) {
+      res.status(403).json({ error: 'Forbidden' }); return
+    }
+    const addr = req.params.address.toLowerCase()
+    const trade = req.body
+    if (!trade || !trade.user || !trade.side) {
+      res.status(400).json({ error: 'Invalid trade data' }); return
+    }
+    const trades = tradesMap.get(addr) || []
+    trades.unshift({ ...trade, timestamp: Date.now() })
+    if (trades.length > 200) trades.pop()
+    tradesMap.set(addr, trades)
+    saveTrades()
+    res.json({ ok: true })
+  })
+
   // ── OnchainOS: DEX Aggregator + Wallet API ─────────────────
 
   app.get('/api/onchainos/dex-quote', async (req, res) => {
@@ -271,7 +378,8 @@ export function createApiServer(
           { name: 'OKX Candlestick Data', type: 'REST', frequency: 'On demand (Claude analysis)', status: 'active', endpoint: 'https://www.okx.com/api/v5/market/candles' },
             { name: 'OnchainOS DEX Aggregator V6', type: 'REST (HMAC)', frequency: 'On demand', status: os.dexAggregator.status, endpoint: 'https://web3.okx.com/api/v6/dex/aggregator/quote' },
           { name: 'X Layer RPC Balance Query', type: 'JSON-RPC', frequency: 'Per deployment', status: 'active', endpoint: 'https://rpc.xlayer.tech (eth_getBalance)' },
-          { name: 'X Layer RPC', type: 'JSON-RPC', frequency: 'Per transaction', status: 'active', endpoint: 'https://rpc.xlayer.tech' },
+          { name: 'OnchainOS Gateway (TX Broadcast)', type: 'REST (HMAC)', frequency: 'Per deployment/resolution', status: os.dexAggregator.status, endpoint: 'https://web3.okx.com/api/v6/dex/pre-transaction/broadcast-transaction' },
+          { name: 'X Layer RPC (fallback)', type: 'JSON-RPC', frequency: 'Fallback if Gateway unavailable', status: 'active', endpoint: 'https://rpc.xlayer.tech' },
           { name: 'x402 HTTP 402 Protocol', type: 'HTTP 402', frequency: 'Per agent service call', status: 'active', details: 'Signal→Creator, Creator→Resolver' },
           { name: 'Crypto Fear & Greed Index', type: 'REST', frequency: 'Per Claude analysis run', status: 'active' },
           { name: 'OKX Wallet (EIP-1193)', type: 'DApp Connect', frequency: 'On user action', status: 'active' },
@@ -288,6 +396,121 @@ export function createApiServer(
       },
       ts: Date.now(),
     })
+  })
+
+  // ── Agentic Wallet: bet via backend TEE wallet ─────────────
+
+  app.get('/api/agentic-wallet/status', (_req, res) => {
+    try {
+      const { execSync } = require('child_process')
+      const output = execSync('onchainos wallet status', { timeout: 5000, encoding: 'utf-8' })
+      const data = JSON.parse(output)
+      if (data.ok && data.data?.loggedIn) {
+        // Get address
+        let address = ''
+        try {
+          const addrOutput = execSync('onchainos wallet addresses --chain 196', { timeout: 5000, encoding: 'utf-8' })
+          const addrData = JSON.parse(addrOutput)
+          address = addrData.data?.xlayer?.[0]?.address || addrData.data?.evm?.[0]?.address || ''
+        } catch {}
+        res.json({ available: true, email: data.data.email, address, account: data.data.currentAccountName })
+      } else {
+        res.json({ available: false })
+      }
+    } catch {
+      res.json({ available: false })
+    }
+  })
+
+  app.post('/api/agentic-bet', async (req, res) => {
+    const { marketAddress, side, amount } = req.body
+    if (!marketAddress || !side || !amount) {
+      res.status(400).json({ error: 'Missing marketAddress, side, or amount' }); return
+    }
+
+    // Validate inputs to prevent command injection
+    if (!/^0x[0-9a-fA-F]{40}$/.test(marketAddress)) {
+      res.status(400).json({ error: 'Invalid market address' }); return
+    }
+    if (!['yes', 'no'].includes(side.toLowerCase())) {
+      res.status(400).json({ error: 'Side must be yes or no' }); return
+    }
+    const numAmount = parseFloat(amount)
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 1) {
+      res.status(400).json({ error: 'Amount must be 0-1 OKB' }); return
+    }
+
+    const calldata = side.toLowerCase() === 'yes' ? '0x9e075449' : '0xa9709c0c'
+
+    try {
+      const { execFileSync } = require('child_process')
+      const args = ['wallet', 'contract-call', '--chain', '196', '--to', marketAddress, '--input-data', calldata, '--value', String(numAmount)]
+      const output = execFileSync('onchainos', args, { timeout: 30000, encoding: 'utf-8' })
+      const result = JSON.parse(output)
+
+      if (result.ok && result.data?.txHash) {
+        // Auto-record trade
+        const addr = marketAddress.toLowerCase()
+        const trades = tradesMap.get(addr) || []
+        trades.unshift({
+          user: '0xc981d073a309b7ab3f25705681670d21138db522',
+          side: side.toUpperCase(),
+          amountIn: amount,
+          sharesOut: '...',
+          priceAfter: '...',
+          txHash: result.data.txHash,
+          source: 'Agentic Wallet (TEE)',
+          timestamp: Date.now(),
+        })
+        tradesMap.set(addr, trades)
+        saveTrades()
+
+        res.json({ ok: true, txHash: result.data.txHash, wallet: 'Agentic Wallet (TEE)' })
+      } else {
+        res.status(500).json({ error: result.error || 'Transaction failed' })
+      }
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message?.slice(0, 100) })
+    }
+  })
+
+  // ── Demo: quick market for demo/judging ────────────────────
+
+  app.post('/api/demo/quick-market', async (req, res) => {
+    if (!demo) { res.status(500).json({ error: 'Demo hooks not configured' }); return }
+    const minutes = parseInt(req.query.minutes as string) || 10
+    try {
+      const { getCurrentPrice } = await import('../shared/okxApi.js')
+      const { x402HttpCall } = await import('../shared/x402.js')
+      const ticker = await getCurrentPrice('OKB-USDT')
+      if (!ticker) { res.status(500).json({ error: 'Price fetch failed' }); return }
+
+      const targetPrice = Math.round(ticker.price)
+      const deadlineTs = Math.floor(Date.now() / 1000) + minutes * 60
+      const deadlineStr = new Date(deadlineTs * 1000).toUTCString().replace(' GMT', ' UTC')
+
+      // x402 HTTP payment
+      await x402HttpCall('signal', 'creator', 'deploy-market', demo.logAction)
+
+      // Deploy market
+      const market = await demo.deployMarket({
+        instId: 'OKB-USDT',
+        currentPrice: ticker.price,
+        question: `Will OKB close above $${targetPrice} by ${deadlineStr}?`,
+        targetPrice,
+        deadline: deadlineTs,
+        aiReasoning: `Demo market — ${minutes}min expiry for live demonstration of full market lifecycle.`,
+      })
+
+      res.json({
+        ok: true,
+        market: market ? { address: market.address, txHash: market.txHash, question: market.question } : 'simulation',
+        expiresIn: `${minutes} minutes`,
+        expiresAt: deadlineStr,
+      })
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message?.slice(0, 100) })
+    }
   })
 
   // ── Health ────────────────────────────────────────────────

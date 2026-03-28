@@ -24,6 +24,7 @@ export interface MarketInfo {
   // ── Claude AI fields ─────────────────────────────────────────
   aiReasoning?:    string   // Why Claude created this market (shown on card)
   aiAnalysis?:     string   // Post-resolution analysis from Claude
+  contractBalance?: string  // Real OKB locked in contract (wei)
 }
 
 // ── Instruction Queue (blockquote protocol) ──────────────────

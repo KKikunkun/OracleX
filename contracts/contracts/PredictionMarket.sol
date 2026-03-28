@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 /**
  * @title PredictionMarket
- * @notice OracleX — CPMM prediction market (Polymarket-style dynamic pricing)
- * @dev Constant Product Market Maker: k = yesPool * noPool
- *      Buying YES → yesPool grows, noPool shrinks → YES becomes expensive
- *      Price of YES = noPool / (yesPool + noPool)
+ * @notice OracleX — Virtual liquidity prediction market (Polymarket-style)
+ * @dev Uses virtual reserves for the CPMM so no initial capital is needed.
+ *      Virtual liquidity controls price sensitivity without locking real funds.
+ *      Price = noPool / (yesPool + noPool), ranges 0-100%.
  *      Deployed by MarketFactory. Resolved by Resolver Agent using OKX price.
  *      X Layer Mainnet (chainId 196) — Zero Gas
  */
@@ -21,6 +21,13 @@ contract PredictionMarket {
         _locked = 1;
     }
 
+    // ─── Constants ───────────────────────────────────────────
+    // Virtual liquidity: 1 OKB per side = 2 OKB total virtual reserves
+    // This means a 0.01 OKB bet moves price ~0.5% (reasonable)
+    // No real OKB is locked — only user deposits are real
+    uint256 public constant VIRTUAL_LIQUIDITY = 1 ether;  // 1 OKB
+    uint256 public constant PLATFORM_FEE_BPS = 200;       // 2%
+
     // ─── State ───────────────────────────────────────────────
 
     string  public question;
@@ -31,25 +38,23 @@ contract PredictionMarket {
     bool    public resolved;
     bool    public outcomeYes;
 
-    // CPMM pools
+    // CPMM pools (include virtual liquidity)
     uint256 public yesPool;
     uint256 public noPool;
-    uint256 public constant PLATFORM_FEE_BPS = 200; // 2%
 
     address public creatorAgent;
     address public resolverAgent;
     address public platformWallet;
 
-    // Outcome token balances
+    // User shares
     mapping(address => uint256) public yesShares;
     mapping(address => uint256) public noShares;
     mapping(address => bool)    public claimed;
 
-    // Track total minted shares for proportional payout
     uint256 public totalYesMinted;
     uint256 public totalNoMinted;
 
-    // ERC-8183
+    // Job hash audit trail
     bytes32 public jobCommitHash;
     bytes32 public jobCompleteHash;
 
@@ -68,6 +73,7 @@ contract PredictionMarket {
     modifier beforeDeadline() { require(block.timestamp < deadline, "Betting closed"); _; }
 
     // ─── Constructor ─────────────────────────────────────────
+    // No msg.value needed! Virtual liquidity provides the initial pricing.
 
     constructor(
         string  memory _question,
@@ -91,31 +97,26 @@ contract PredictionMarket {
         platformWallet = _platformWallet;
         jobCommitHash  = _jobCommitHash;
 
-        // Initial liquidity sets 50/50 price ($0.50 each)
-        if (msg.value > 0) {
-            uint256 half = msg.value / 2;
-            yesPool = half;
-            noPool  = msg.value - half;
-        }
+        // Virtual liquidity — no real OKB locked
+        yesPool = VIRTUAL_LIQUIDITY;
+        noPool  = VIRTUAL_LIQUIDITY;
 
         emit MarketCreated(address(this), _question, _instId, _targetPrice, _deadline);
     }
 
-    // ─── CPMM Buy ─────────────────────────────────────────────
+    // ─── CPMM Buy (with virtual reserves) ─────────────────────
     //
-    // k = yesPool * noPool (constant product)
+    // k = yesPool * noPool (includes virtual liquidity)
+    // Virtual reserves ensure reasonable price sensitivity:
+    //   - 0.01 OKB bet on a 1+1 pool → price moves ~0.5%
+    //   - 0.1 OKB bet → price moves ~5%
+    //   - 1 OKB bet → price moves ~25%
     //
-    // Buy YES: add OKB to yesPool → noPool shrinks to maintain k
-    //   sharesOut = noPool - (k / (yesPool + amountIn))
-    //   YES price rises (more demand), NO price drops
-    //
-    // Buy NO: mirror logic
-    //
-    // This is exactly how Uniswap works, applied to binary outcomes.
+    // Users receive shares proportional to their impact on the pool.
+    // Only real OKB (address(this).balance) is paid out on resolution.
 
     function buyYes() external payable notResolved beforeDeadline nonReentrant {
         require(msg.value > 0, "Must send OKB");
-        require(yesPool > 0 && noPool > 0, "No liquidity");
 
         uint256 amountIn = msg.value;
         uint256 k = yesPool * noPool;
@@ -131,7 +132,6 @@ contract PredictionMarket {
         yesShares[msg.sender] += sharesOut;
         totalYesMinted += sharesOut;
 
-        // Current YES price in bps after trade
         uint256 total = yesPool + noPool;
         uint256 yesPriceAfter = (noPool * 10000) / total;
 
@@ -140,7 +140,6 @@ contract PredictionMarket {
 
     function buyNo() external payable notResolved beforeDeadline nonReentrant {
         require(msg.value > 0, "Must send OKB");
-        require(yesPool > 0 && noPool > 0, "No liquidity");
 
         uint256 amountIn = msg.value;
         uint256 k = yesPool * noPool;
@@ -163,8 +162,6 @@ contract PredictionMarket {
     }
 
     // ─── Price View ───────────────────────────────────────────
-    // YES price = noPool / total  (high noPool remaining = YES is in demand = expensive)
-    // NO price  = yesPool / total
 
     function getOdds() external view returns (uint256 yesOdds, uint256 noOdds) {
         uint256 total = yesPool + noPool;
@@ -184,9 +181,11 @@ contract PredictionMarket {
         resolved        = true;
         jobCompleteHash = _jobCompleteHash;
 
-        // Collect platform fee
+        // Collect platform fee only if both sides have participants
+        // If one side is empty, refund() will handle distribution without fee
         uint256 totalBalance = address(this).balance;
-        if (totalBalance > 0) {
+        bool bothSidesActive = totalYesMinted > 0 && totalNoMinted > 0;
+        if (totalBalance > 0 && bothSidesActive) {
             uint256 fee = (totalBalance * PLATFORM_FEE_BPS) / 10000;
             if (fee > 0 && platformWallet != address(0)) {
                 (bool ok, ) = platformWallet.call{value: fee}("");
@@ -198,7 +197,7 @@ contract PredictionMarket {
     }
 
     // ─── Claim ────────────────────────────────────────────────
-    // Winners split remaining balance proportional to their shares
+    // Winners split real OKB balance (only actual deposits, not virtual)
 
     function claimWinnings() external nonReentrant {
         require(resolved,             "Not resolved yet");
@@ -223,6 +222,42 @@ contract PredictionMarket {
 
         (bool ok, ) = msg.sender.call{value: payout}("");
         require(ok, "Payout failed");
+
+        emit WinningsClaimed(msg.sender, payout);
+    }
+
+    // ─── Refund (no counterparty) ───────────────────────────────
+    // If the winning side has zero shares, losing side can reclaim deposits
+
+    function refund() external nonReentrant {
+        require(resolved, "Not resolved yet");
+        require(!claimed[msg.sender], "Already claimed");
+
+        // Only allow refund if winning side has no participants
+        uint256 winningShares = outcomeYes ? totalYesMinted : totalNoMinted;
+        require(winningShares == 0, "Winners exist, use claimWinnings");
+
+        // Refund the losing side's deposit proportionally
+        uint256 userShares;
+        uint256 totalShares;
+        if (outcomeYes) {
+            // YES won but no YES bettors → refund NO bettors
+            userShares  = noShares[msg.sender];
+            totalShares = totalNoMinted;
+        } else {
+            // NO won but no NO bettors → refund YES bettors
+            userShares  = yesShares[msg.sender];
+            totalShares = totalYesMinted;
+        }
+
+        require(userShares > 0,  "No shares to refund");
+        require(totalShares > 0, "Nothing to refund");
+
+        claimed[msg.sender] = true;
+        uint256 payout = (userShares * address(this).balance) / totalShares;
+
+        (bool ok, ) = msg.sender.call{value: payout}("");
+        require(ok, "Refund failed");
 
         emit WinningsClaimed(msg.sender, payout);
     }

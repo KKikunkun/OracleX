@@ -9,6 +9,7 @@ import { config } from '../shared/config.js'
 import type { DeployParams, MarketInfo, AgentAction, QueueMessage } from '../shared/types.js'
 import { withRetry } from '../shared/retry.js'
 import { getWalletBalance } from '../shared/onchainos.js'
+import { signAndBroadcast } from '../shared/onchainGateway.js'
 
 // MarketFactory minimal ABI
 const FACTORY_ABI = [
@@ -132,6 +133,9 @@ export class CreatorAgent {
         { maxRetries: 2, label: `deployMarket(${instId})` }
       )
       const receipt = await tx.wait()
+      if (!receipt) throw new Error('Transaction not confirmed')
+
+      const broadcastResult = { hash: receipt.hash, method: 'direct-rpc' as const }
 
       // Parse MarketDeployed event to get market address
       const iface   = new ethers.Interface(FACTORY_ABI)
@@ -172,7 +176,7 @@ export class CreatorAgent {
         resolutionPrice: null,
         currentPrice:    targetPrice,
         createdAt:       Math.floor(Date.now() / 1000),
-        txHash:          receipt.hash,
+        txHash:          broadcastResult.hash,
         aiReasoning:     params.aiReasoning,
       }
 
@@ -180,12 +184,12 @@ export class CreatorAgent {
       this.onAction({
         role:   'creator',
         action: `✅ Market deployed: ${instId}`,
-        detail: `${address.slice(0, 10)}... | tx: ${receipt.hash.slice(0, 12)}...`,
-        txHash: receipt.hash,
+        detail: `${address.slice(0, 10)}... | tx: ${broadcastResult.hash.slice(0, 12)}...`,
+        txHash: broadcastResult.hash,
         marketAddress: address,
       })
 
-      console.log(`[Creator] Market deployed: ${address} | tx: ${receipt.hash}`)
+      console.log(`[Creator] Market deployed: ${address} | tx: ${broadcastResult.hash}`)
       return market
     } catch (err: any) {
       const msg = (err as Error).message || ''
@@ -280,7 +284,7 @@ export class CreatorAgent {
         outcomeYes:      resolved ? outcomeYes : null,
         resolutionPrice: resolved ? Number(resolutionPrice) / 1e8 : null,
         currentPrice:    null,
-        createdAt:       0,
+        createdAt:       Number(deadline) - 86400,  // estimate: deadline minus 1 day
       }
     } catch {
       return null

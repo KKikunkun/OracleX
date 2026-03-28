@@ -149,34 +149,33 @@ export async function getSettlementPrice(
   instId: string,
   deadlineMs: number   // milliseconds
 ): Promise<number | null> {
-  try {
-    const res  = await fetch(
-      `${BASE}/market/candles?instId=${instId}&bar=1H&limit=5&instType=SPOT`,
-      { headers: { 'User-Agent': 'OracleX/1.0' }, signal: AbortSignal.timeout(10_000) }
-    )
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const body: any = await res.json()
-    const candles: string[][] = body.data || []
+  // Target: the 1H candle whose open time contains the deadline
+  const targetOpenTs = Math.floor(deadlineMs / 3_600_000) * 3_600_000
 
-    // Each candle: [openTime, open, high, low, close, ...]
-    // Find the candle whose window contains the deadline
-    for (const candle of candles) {
-      const openTs  = parseInt(candle[0])   // ms
-      const closeTs = openTs + 3_600_000    // 1 hour later
-      if (deadlineMs >= openTs && deadlineMs < closeTs) {
-        return parseFloat(candle[4])         // close price
+  // Search up to 3 pages of candles (300 candles = 12.5 days back)
+  for (let page = 0; page < 3; page++) {
+    try {
+      const after = page === 0 ? '' : `&after=${targetOpenTs + (page * 100) * 3_600_000}`
+      const res = await fetch(
+        `${BASE}/market/candles?instId=${instId}&bar=1H&limit=100&instType=SPOT${after}`,
+        { headers: { 'User-Agent': 'OracleX/1.0' }, signal: AbortSignal.timeout(10_000) }
+      )
+      if (!res.ok) continue
+      const body: any = await res.json()
+      const candles: string[][] = body.data || []
+
+      const match = candles.find(c => parseInt(c[0]) === targetOpenTs)
+      if (match) {
+        const price = parseFloat(match[4])
+        console.log(`[Settlement] ${instId}: found candle at ${new Date(targetOpenTs).toISOString()} → $${price}`)
+        return price
       }
-    }
-
-    // Fallback: latest completed candle close
-    if (candles.length > 0) return parseFloat(candles[0][4])
-  } catch (err) {
-    console.warn(`[OKX Candles] ${instId}: unreachable — using demo price`)
+    } catch {}
   }
 
-  // Fallback: ticker price (which itself falls back to demo)
-  const ticker = await getCurrentPrice(instId)
-  return ticker ? ticker.price : demoPriceOf(instId)
+  // Strict: no fallback. Return null to block resolution until candle is available.
+  console.error(`[Settlement] BLOCKED: candle for ${instId} at ${new Date(targetOpenTs).toISOString()} not found. Will retry.`)
+  return null
 }
 
 // ── Convert price to contract format ─────────────────────────

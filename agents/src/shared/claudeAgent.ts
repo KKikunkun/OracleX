@@ -348,13 +348,13 @@ async function runWithAnthropic(
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey })
 
-  const tools: import('@anthropic-ai/sdk').Tool[] = TOOLS_OPENAI.map(t => ({
+  const tools = TOOLS_OPENAI.map(t => ({
     name:         t.function.name,
     description:  t.function.description,
-    input_schema: { type: 'object' as const, ...t.function.parameters },
+    input_schema: t.function.parameters,
   }))
 
-  const messages: import('@anthropic-ai/sdk').MessageParam[] = [
+  const messages: Array<{ role: 'user' | 'assistant'; content: any }> = [
     { role: 'user', content: `Analyze current crypto market conditions and create prediction markets.\nUTC: ${new Date().toUTCString()}` },
   ]
 
@@ -363,23 +363,23 @@ async function runWithAnthropic(
     const response = await client.messages.create({
       model, max_tokens: 1024,
       system: SIGNAL_SYSTEM_PROMPT,
-      tools, messages,
+      tools: tools as any, messages: messages as any,
     })
 
     messages.push({ role: 'assistant', content: response.content })
 
     if (response.stop_reason === 'end_turn') {
-      const text = response.content.find(b => b.type === 'text')
-      if (text?.type === 'text' && text.text.trim()) {
-        onAction({ role: 'signal', action: '🤖 Claude analysis complete', detail: text.text.slice(0, 200) })
+      const text = (response.content as any[]).find((b: any) => b.type === 'text')
+      if (text?.text?.trim()) {
+        onAction({ role: 'signal', action: 'AI analysis complete', detail: text.text.slice(0, 200) })
       }
       break
     }
 
     if (response.stop_reason !== 'tool_use') break
 
-    const toolResults: import('@anthropic-ai/sdk').ToolResultBlockParam[] = []
-    for (const block of response.content) {
+    const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = []
+    for (const block of response.content as any[]) {
       if (block.type !== 'tool_use') continue
       const result = await executeTool(block.name, block.input as Record<string, unknown>, getActiveMarkets, onDeploy, onAction)
       toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })

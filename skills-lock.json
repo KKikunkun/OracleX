@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "skills": {
+    "okx-agentic-wallet": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "bedbc13a4283e3235ace0d8ff6a0c9ba08c0dd3bf809d855d2f188ddc08c942a"
+    },
+    "okx-audit-log": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "d16088084e23e7ea983e4d03d645311450a6df3cbc59a6df662858d5908dce96"
+    },
+    "okx-defi-invest": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "df9a16cdc53af272cf96b489d57112a0bc691416a4f4906e3c8148ac7693e97f"
+    },
+    "okx-defi-portfolio": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "d359b89c98b9f11159b2616bf05ee228626661802dfcec9b7b138e01593bc598"
+    },
+    "okx-dex-market": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "8593b73f04fd654f7ce8170f1c00801c8c639219072ce69d9943e08b0fc43aed"
+    },
+    "okx-dex-signal": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "7d5ca8cb1a6cfeaa9e8bb546d666abef817023056856a8a301c0d39da249e2b8"
+    },
+    "okx-dex-swap": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "627274acc249d93ebb0b7594e2ba153617dfa9fa82b2863bffbc5534fa17e886"
+    },
+    "okx-dex-token": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "bda6c1807f0fcd90c29e9c6f9f9ccae5aba74aa422fd2d10062d6081921f0463"
+    },
+    "okx-dex-trenches": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "66056ba15e2d7c14ed844f94d4ff875e5830247ab80d42c09b76758afc2da729"
+    },
+    "okx-onchain-gateway": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "773df0ed23009a4471f3d2fd9f21811f5ddde5392e1c601542171803aa80e6bd"
+    },
+    "okx-security": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "58779ff04a17130926733769acb7e90193cf0b219deab1baa3d72113cf94c510"
+    },
+    "okx-wallet-portfolio": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "e387517d5bd0c5c94a909427c7c1d229b3ce5f3af9af8e0f6c5c67d47a4f6c86"
+    },
+    "okx-x402-payment": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "computedHash": "76133c1e690e7f91c38aa31e44f8f5b58d7524cf7fbd6999253b2a2f89e9d4e0"
+    }
+  }
+}

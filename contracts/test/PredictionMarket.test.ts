@@ -4,7 +4,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { MarketFactory, PredictionMarket } from "../typechain-types";
 
-describe("OracleX Prediction Market (CPMM)", function () {
+describe("OracleX Prediction Market (Virtual Liquidity CPMM)", function () {
   let factory: MarketFactory;
   let owner: HardhatEthersSigner;
   let creator: HardhatEthersSigner;
@@ -22,6 +22,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
   const ONE_HOUR = 3600;
   const ONE_ETH = ethers.parseEther("1");
   const HALF_ETH = ONE_ETH / 2n;
+  const VIRTUAL_LIQUIDITY = ONE_ETH; // 1 ether per side
 
   async function getDeadline(offset: number = ONE_HOUR): Promise<number> {
     const latest = await time.latest();
@@ -40,7 +41,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
 
   async function deployMarketViaFactory(
     factoryInstance: MarketFactory,
-    liquidity: bigint = ONE_ETH,
+    liquidity: bigint = 0n,
     deadlineOffset: number = ONE_HOUR
   ): Promise<PredictionMarket> {
     const deadline = await getDeadline(deadlineOffset);
@@ -117,13 +118,13 @@ describe("OracleX Prediction Market (CPMM)", function () {
       ).to.be.revertedWith("Invalid resolver");
     });
 
-    it("should allow creator to deploy a market", async function () {
+    it("should allow creator to deploy a market with value: 0", async function () {
       const deadline = await getDeadline();
       await expect(
         factory
           .connect(creator)
           .deployMarket(QUESTION, INST_ID, TARGET_PRICE, deadline, JOB_COMMIT_HASH, {
-            value: ONE_ETH,
+            value: 0,
           })
       ).to.emit(factory, "MarketDeployed");
 
@@ -139,7 +140,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
         factory
           .connect(user1)
           .deployMarket(QUESTION, INST_ID, TARGET_PRICE, deadline, JOB_COMMIT_HASH, {
-            value: ONE_ETH,
+            value: 0,
           })
       ).to.be.revertedWith("Not creator agent");
     });
@@ -150,7 +151,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
         factory
           .connect(creator)
           .deployMarket("", INST_ID, TARGET_PRICE, deadline, JOB_COMMIT_HASH, {
-            value: ONE_ETH,
+            value: 0,
           })
       ).to.be.revertedWith("Empty question");
     });
@@ -161,7 +162,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
         factory
           .connect(creator)
           .deployMarket(QUESTION, INST_ID, TARGET_PRICE, pastDeadline, JOB_COMMIT_HASH, {
-            value: ONE_ETH,
+            value: 0,
           })
       ).to.be.revertedWith("Deadline must be future");
     });
@@ -208,7 +209,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
   });
 
   // ──────────────────────────────────────────────────────────────
-  // 2. PredictionMarket (CPMM)
+  // 2. PredictionMarket (Virtual Liquidity CPMM)
   // ──────────────────────────────────────────────────────────────
 
   describe("PredictionMarket", function () {
@@ -218,7 +219,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
       market = await deployMarketViaFactory(factory);
     });
 
-    // ── 2. Initial state: 50/50 pools, 50% odds ──
+    // ── 2. Initial state: virtual liquidity 1 ETH per side, 50/50 odds ──
 
     describe("Initial state", function () {
       it("should have correct parameters", async function () {
@@ -231,9 +232,9 @@ describe("OracleX Prediction Market (CPMM)", function () {
         expect(await market.jobCommitHash()).to.equal(JOB_COMMIT_HASH);
       });
 
-      it("should split initial liquidity 50/50", async function () {
-        expect(await market.yesPool()).to.equal(HALF_ETH);
-        expect(await market.noPool()).to.equal(ONE_ETH - HALF_ETH);
+      it("should set pools to VIRTUAL_LIQUIDITY (1 ETH each)", async function () {
+        expect(await market.yesPool()).to.equal(VIRTUAL_LIQUIDITY);
+        expect(await market.noPool()).to.equal(VIRTUAL_LIQUIDITY);
       });
 
       it("should have 50/50 odds initially", async function () {
@@ -246,9 +247,14 @@ describe("OracleX Prediction Market (CPMM)", function () {
         expect(await market.totalYesMinted()).to.equal(0);
         expect(await market.totalNoMinted()).to.equal(0);
       });
+
+      it("should have zero contract balance (no real deposits)", async function () {
+        const balance = await ethers.provider.getBalance(await market.getAddress());
+        expect(balance).to.equal(0);
+      });
     });
 
-    // ── 3. buyYes: CPMM mechanics ──
+    // ── 3. buyYes: CPMM mechanics with virtual liquidity ──
 
     describe("buyYes (CPMM)", function () {
       it("should give shares < amountIn (slippage)", async function () {
@@ -278,6 +284,9 @@ describe("OracleX Prediction Market (CPMM)", function () {
       });
 
       it("should compute correct shares via constant product formula", async function () {
+        // With virtual liquidity: yesPool = 1e18, noPool = 1e18
+        // Buy 0.5 ETH YES: k = 1e36, newYes = 1.5e18, newNo = 1e36/1.5e18 = 0.666e18
+        // sharesOut = 1e18 - 0.666e18 = 0.333e18
         const amountIn = ethers.parseEther("0.5");
         const yesPoolBefore = await market.yesPool();
         const noPoolBefore = await market.noPool();
@@ -294,51 +303,13 @@ describe("OracleX Prediction Market (CPMM)", function () {
         expect(await market.totalYesMinted()).to.equal(sharesOut);
       });
 
-      it("should increase YES price after buying YES", async function () {
+      it("should decrease yesOdds after buying YES", async function () {
         const [yesOddsBefore] = await market.getOdds();
 
         await market.connect(user1).buyYes({ value: ethers.parseEther("0.5") });
 
         const [yesOddsAfter] = await market.getOdds();
-        // YES price = noPool / total. After buying YES, noPool shrinks -> YES price goes up
-        // Wait, actually: yesOdds = noPool*10000/total.
-        // Buying YES: yesPool grows, noPool shrinks -> noPool/total decreases
-        // So yesOdds (which represents YES price) decreases? Let me re-check...
-        // YES price = noPool / (yesPool + noPool). When yesPool goes up and noPool goes down,
-        // the numerator decreases and denominator could go either way.
-        // Actually total = yesPool + noPool. After buy: yesPool increases by amountIn,
-        // noPool decreases by sharesOut. If amountIn > sharesOut (which it is due to slippage),
-        // total increases. So noPool/total definitely decreases.
-        // But "YES becomes expensive" means the price goes UP.
-        // The contract comment says: "Price of YES = noPool / (yesPool + noPool)"
-        // A LOWER ratio means YES is MORE expensive? No, that's backwards.
-        //
-        // Actually in prediction markets: price = odds. If yesOdds drops from 5000 to 3333,
-        // that means YES is cheaper. But the contract docs say buying YES makes it expensive.
-        //
-        // Re-reading the contract: "Buying YES -> yesPool grows, noPool shrinks -> YES becomes expensive"
-        // But getOdds: yesOdds = noPool*10000/total. If noPool shrinks, yesOdds goes DOWN.
-        //
-        // I think the naming is confusing. The "yesOdds" represents the implied probability/price.
-        // When you buy YES, demand is high -> price should go UP -> yesOdds should go UP.
-        // But with this formula yesOdds goes DOWN after buying YES.
-        //
-        // Let me just test what actually happens and match the contract behavior.
-        // With 0.5 ETH buy YES: yesPool = 0.5 + 0.5 = 1.0, k = 0.25,
-        // noPool = 0.25/1.0 = 0.25. total = 1.25.
-        // yesOdds = 0.25*10000/1.25 = 2000. Was 5000. So yesOdds DECREASED.
-        //
-        // This makes sense if yesOdds represents the COST to buy 1 full YES share.
-        // Lower cost = more demand has already been absorbed = price moved.
-        // Actually no, in AMM the convention:
-        // YES price = noPool / total is standard Polymarket formula.
-        // When noPool shrinks relative to total, YES is "winning" / more demanded.
-        // yesOdds going from 5000 to 2000 means YES costs 20% of a unit now.
-        // That means YES got CHEAPER not more expensive.
-        //
-        // I think there's a naming inconsistency in the contract but let's just test
-        // the actual math and not worry about the semantics.
-
+        // yesOdds = noPool*10000/total. After buying YES, noPool shrinks -> yesOdds decreases
         expect(yesOddsAfter).to.be.lt(yesOddsBefore);
       });
 
@@ -468,17 +439,18 @@ describe("OracleX Prediction Market (CPMM)", function () {
         expect(rateSmall).to.be.gt(rateLarge);
       });
 
-      it("buying half the pool should give exactly 1/3 of the opposite pool", async function () {
-        // Initial: yesPool = 0.5, noPool = 0.5, k = 0.25
-        // Buy 0.5 ETH YES: newYesPool = 1.0, newNoPool = 0.25/1.0 = 0.25
-        // sharesOut = 0.5 - 0.25 = 0.25 (half of noPool)
-        // But we sent 0.5 ETH and got 0.25 shares -> 50% slippage
-        const amountIn = HALF_ETH; // 0.5 ETH = same as yesPool
+      it("buying 0.5 ETH YES on 1+1 virtual pool should give 1/3 of noPool", async function () {
+        // Initial: yesPool = 1.0, noPool = 1.0, k = 1.0
+        // Buy 0.5 ETH YES: newYesPool = 1.5, newNoPool = 1.0/1.5 = 0.666...
+        // sharesOut = 1.0 - 0.666... = 0.333... (1/3 of noPool)
+        const amountIn = HALF_ETH; // 0.5 ETH
         await market.connect(user1).buyYes({ value: amountIn });
 
         const shares = (await market.getUserShares(user1.address)).yes;
-        // k = 0.5 * 0.5 = 0.25, newYes = 1.0, newNo = 0.25, shares = 0.5 - 0.25 = 0.25
-        expect(shares).to.equal(ethers.parseEther("0.25"));
+        // k = 1e18 * 1e18 = 1e36, newYes = 1.5e18, newNo = 1e36 / 1.5e18 = 666666666666666666
+        // sharesOut = 1e18 - 666666666666666666 = 333333333333333334
+        const expectedShares = VIRTUAL_LIQUIDITY - (VIRTUAL_LIQUIDITY * VIRTUAL_LIQUIDITY) / (VIRTUAL_LIQUIDITY + amountIn);
+        expect(shares).to.equal(expectedShares);
       });
     });
 
@@ -486,12 +458,12 @@ describe("OracleX Prediction Market (CPMM)", function () {
 
     describe("Sequential buys", function () {
       it("should move price correctly with each successive trade", async function () {
-        // Track pools through multiple buys
+        // Track pools through multiple buys (starting from VIRTUAL_LIQUIDITY)
         const buyAmount = ethers.parseEther("0.1");
 
         // First buy YES
-        let yesPool = HALF_ETH;
-        let noPool = HALF_ETH;
+        let yesPool = VIRTUAL_LIQUIDITY;
+        let noPool = VIRTUAL_LIQUIDITY;
         let result = cpmmSharesOut(yesPool, noPool, buyAmount);
         yesPool = result.newPoolIn;
         noPool = result.newPoolOut;
@@ -527,8 +499,8 @@ describe("OracleX Prediction Market (CPMM)", function () {
         const amount1 = ethers.parseEther("0.1");
         const amount2 = ethers.parseEther("0.2");
 
-        let yesPool = HALF_ETH;
-        let noPool = HALF_ETH;
+        let yesPool = VIRTUAL_LIQUIDITY;
+        let noPool = VIRTUAL_LIQUIDITY;
 
         const r1 = cpmmSharesOut(yesPool, noPool, amount1);
         yesPool = r1.newPoolIn;
@@ -631,12 +603,13 @@ describe("OracleX Prediction Market (CPMM)", function () {
         ).to.be.revertedWith("Already resolved");
       });
 
-      it("should send 2% platform fee from contract balance on resolution", async function () {
+      it("should send 2% platform fee from real contract balance on resolution", async function () {
         await market.connect(user1).buyYes({ value: ethers.parseEther("5") });
         await market.connect(user2).buyNo({ value: ethers.parseEther("3") });
 
-        // Contract balance = initial 1 ETH + 5 ETH + 3 ETH = 9 ETH
+        // Contract balance = only real deposits: 5 ETH + 3 ETH = 8 ETH (no initial liquidity)
         const contractBalance = await ethers.provider.getBalance(await market.getAddress());
+        expect(contractBalance).to.equal(ethers.parseEther("8"));
         const expectedFee = (contractBalance * 200n) / 10000n;
 
         await time.increase(ONE_HOUR + 1);
@@ -655,8 +628,8 @@ describe("OracleX Prediction Market (CPMM)", function () {
         const yesAmount = ethers.parseEther("0.5");
         await market.connect(user1).buyYes({ value: yesAmount });
 
-        // Compute expected shares
-        const { sharesOut } = cpmmSharesOut(HALF_ETH, HALF_ETH, yesAmount);
+        // Compute expected shares (starting from VIRTUAL_LIQUIDITY pools)
+        const { sharesOut } = cpmmSharesOut(VIRTUAL_LIQUIDITY, VIRTUAL_LIQUIDITY, yesAmount);
 
         await time.increase(ONE_HOUR + 1);
         await market.connect(resolver).resolve(TARGET_PRICE, JOB_COMPLETE_HASH);
@@ -676,7 +649,7 @@ describe("OracleX Prediction Market (CPMM)", function () {
         const noAmount = ethers.parseEther("0.5");
         await market.connect(user1).buyNo({ value: noAmount });
 
-        const { sharesOut } = cpmmSharesOut(HALF_ETH, HALF_ETH, noAmount);
+        const { sharesOut } = cpmmSharesOut(VIRTUAL_LIQUIDITY, VIRTUAL_LIQUIDITY, noAmount);
 
         await time.increase(ONE_HOUR + 1);
         await market.connect(resolver).resolve(TARGET_PRICE - 1n, JOB_COMPLETE_HASH);
@@ -764,9 +737,9 @@ describe("OracleX Prediction Market (CPMM)", function () {
         const amount2 = ethers.parseEther("0.2");
         const amount3 = ethers.parseEther("0.5");
 
-        // Compute shares step by step through CPMM
-        let yesPool = HALF_ETH;
-        let noPool = HALF_ETH;
+        // Compute shares step by step through CPMM (starting from VIRTUAL_LIQUIDITY)
+        let yesPool = VIRTUAL_LIQUIDITY;
+        let noPool = VIRTUAL_LIQUIDITY;
 
         // user1 buys YES
         const r1 = cpmmSharesOut(yesPool, noPool, amount1);
@@ -808,11 +781,8 @@ describe("OracleX Prediction Market (CPMM)", function () {
         ).to.changeEtherBalance(user1, user1Expected);
 
         // user2 claims - balance has decreased after user1 claim
+        // Contract uses: (userShares * address(this).balance) / totalShares
         const balanceForUser2 = await ethers.provider.getBalance(await market.getAddress());
-        const user2Expected = (user2Shares * balanceForUser2) / (totalYes - user1Shares);
-        // Actually the contract uses: (userShares * address(this).balance) / totalShares
-        // where totalShares is still totalYesMinted (doesn't decrease). But balance decreased.
-        // So user2Expected = user2Shares * balanceForUser2 / totalYes
         const user2ExpectedActual = (user2Shares * balanceForUser2) / totalYes;
         await expect(
           market.connect(user2).claimWinnings()
@@ -830,8 +800,8 @@ describe("OracleX Prediction Market (CPMM)", function () {
         const amount3 = ethers.parseEther("0.2");
 
         // user1 buys YES
-        let yesPool = HALF_ETH;
-        let noPool = HALF_ETH;
+        let yesPool = VIRTUAL_LIQUIDITY;
+        let noPool = VIRTUAL_LIQUIDITY;
         const r1 = cpmmSharesOut(yesPool, noPool, amount1);
         yesPool = r1.newPoolIn;
         noPool = r1.newPoolOut;
@@ -898,41 +868,50 @@ describe("OracleX Prediction Market (CPMM)", function () {
     // ── 11. Odds view: verify getOdds returns correct values after trades ──
 
     describe("getOdds (CPMM)", function () {
-      it("should return 50/50 when pools are equal", async function () {
+      it("should return 50/50 when pools are equal (virtual liquidity)", async function () {
         const [yesOdds, noOdds] = await market.getOdds();
         expect(yesOdds).to.equal(5000);
         expect(noOdds).to.equal(5000);
       });
 
       it("should return correct odds after buyYes", async function () {
-        // Initial: yesPool = 0.5, noPool = 0.5, k = 0.25
-        // Buy 0.5 ETH YES: yesPool = 1.0, noPool = 0.25
-        // total = 1.25
-        // yesOdds = 0.25 * 10000 / 1.25 = 2000
-        // noOdds = 1.0 * 10000 / 1.25 = 8000
+        // Initial: yesPool = 1.0, noPool = 1.0, k = 1.0
+        // Buy 0.5 ETH YES: yesPool = 1.5, noPool = 1.0/1.5 = 0.666...
+        // total = 1.5 + 0.666... = 2.166...
+        // yesOdds = 0.666... * 10000 / 2.166... = 3076 (integer division)
+        // noOdds = 1.5 * 10000 / 2.166... = 6923
         await market.connect(user1).buyYes({ value: HALF_ETH });
 
+        const yP = VIRTUAL_LIQUIDITY + HALF_ETH;
+        const nP = (VIRTUAL_LIQUIDITY * VIRTUAL_LIQUIDITY) / yP;
+        const total = yP + nP;
+        const expectedYesOdds = (nP * 10000n) / total;
+        const expectedNoOdds = (yP * 10000n) / total;
+
         const [yesOdds, noOdds] = await market.getOdds();
-        expect(yesOdds).to.equal(2000);
-        expect(noOdds).to.equal(8000);
+        expect(yesOdds).to.equal(expectedYesOdds);
+        expect(noOdds).to.equal(expectedNoOdds);
       });
 
       it("should return correct odds after buyNo", async function () {
-        // Mirror: buy 0.5 ETH NO
-        // noPool = 1.0, yesPool = 0.25, total = 1.25
-        // yesOdds = 1.0 * 10000 / 1.25 = 8000
-        // noOdds = 0.25 * 10000 / 1.25 = 2000
+        // Mirror: buy 0.5 ETH NO on 1+1 pool
         await market.connect(user1).buyNo({ value: HALF_ETH });
 
+        const nP = VIRTUAL_LIQUIDITY + HALF_ETH;
+        const yP = (VIRTUAL_LIQUIDITY * VIRTUAL_LIQUIDITY) / nP;
+        const total = yP + nP;
+        const expectedYesOdds = (nP * 10000n) / total;
+        const expectedNoOdds = (yP * 10000n) / total;
+
         const [yesOdds, noOdds] = await market.getOdds();
-        expect(yesOdds).to.equal(8000);
-        expect(noOdds).to.equal(2000);
+        expect(yesOdds).to.equal(expectedYesOdds);
+        expect(noOdds).to.equal(expectedNoOdds);
       });
 
       it("should return correct odds after sequential trades", async function () {
         // Buy 0.1 ETH YES, then 0.1 ETH NO
-        let yesPool = HALF_ETH;
-        let noPool = HALF_ETH;
+        let yesPool = VIRTUAL_LIQUIDITY;
+        let noPool = VIRTUAL_LIQUIDITY;
         const buyAmt = ethers.parseEther("0.1");
 
         const r1 = cpmmSharesOut(yesPool, noPool, buyAmt);
@@ -955,9 +934,10 @@ describe("OracleX Prediction Market (CPMM)", function () {
         expect(noOdds).to.equal(expectedNoOdds);
       });
 
-      it("should return 50/50 when pools are empty (no initial liquidity)", async function () {
-        const zeroLiqMarket = await deployMarketViaFactory(factory, 0n);
-        const [yesOdds, noOdds] = await zeroLiqMarket.getOdds();
+      it("should always have 50/50 odds with virtual liquidity and no trades", async function () {
+        // Even deploying with value: 0, virtual liquidity gives 50/50
+        const freshMarket = await deployMarketViaFactory(factory, 0n);
+        const [yesOdds, noOdds] = await freshMarket.getOdds();
         expect(yesOdds).to.equal(5000);
         expect(noOdds).to.equal(5000);
       });
@@ -983,10 +963,10 @@ describe("OracleX Prediction Market (CPMM)", function () {
 
         await market.connect(user1).buyYes({ value: yesAmount });
 
-        // Compute expected shares
-        const r1 = cpmmSharesOut(HALF_ETH, HALF_ETH, yesAmount);
+        // Compute expected shares (starting from VIRTUAL_LIQUIDITY)
+        const r1 = cpmmSharesOut(VIRTUAL_LIQUIDITY, VIRTUAL_LIQUIDITY, yesAmount);
 
-        // After first buy, pools have changed
+        // After first buy, pools have changed: for buyNo, poolIn=noPool(r1.newPoolOut), poolOut=yesPool(r1.newPoolIn)
         await market.connect(user1).buyNo({ value: noAmount });
         const r2 = cpmmSharesOut(r1.newPoolOut, r1.newPoolIn, noAmount);
 
@@ -1009,8 +989,8 @@ describe("OracleX Prediction Market (CPMM)", function () {
       it("should return correct status before and after resolution", async function () {
         const status = await market.getStatus();
         expect(status._resolved).to.be.false;
-        expect(status._yesPool).to.equal(HALF_ETH);
-        expect(status._noPool).to.equal(ONE_ETH - HALF_ETH);
+        expect(status._yesPool).to.equal(VIRTUAL_LIQUIDITY);
+        expect(status._noPool).to.equal(VIRTUAL_LIQUIDITY);
         expect(status._targetPrice).to.equal(TARGET_PRICE);
         expect(status._resolutionPrice).to.equal(0);
 

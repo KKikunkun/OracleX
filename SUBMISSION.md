@@ -60,7 +60,7 @@ Complete HTTP 402 Payment Required flow between agents:
 
 | Contract | Address | Function |
 |----------|---------|----------|
-| MarketFactory | [`0x5D1b4aaC3556E8fbbfa3B2838bD952c7F9857f7a`](https://www.oklink.com/xlayer/address/0x5D1b4aaC3556E8fbbfa3B2838bD952c7F9857f7a) | Factory for deploying CPMM prediction markets |
+| MarketFactory | [`0x62a42AE83304eBa619d71f5f86B87E665A8D7c1E`](https://www.oklink.com/xlayer/address/0x62a42AE83304eBa619d71f5f86B87E665A8D7c1E) | Factory for deploying CPMM prediction markets |
 | PredictionMarket | Deployed per market by Factory | Individual YES/NO market with CPMM dynamic pricing |
 
 **Security:** ReentrancyGuard on `resolve()`, `claimWinnings()`, `buyYes()`, `buyNo()`, role-based access (onlyCreator, onlyResolver), Job Hash job commit/complete hashes.
@@ -131,9 +131,9 @@ Complete HTTP 402 Payment Required flow between agents:
 
 | Metric | Value | Verification |
 |--------|-------|-------------|
-| Factory Contract | `0x5D1b4aaC3556E8fbbfa3B2838bD952c7F9857f7a` | [Explorer](https://www.oklink.com/xlayer/address/0x5D1b4aaC3556E8fbbfa3B2838bD952c7F9857f7a) |
+| Factory Contract | `0x62a42AE83304eBa619d71f5f86B87E665A8D7c1E` | [Explorer](https://www.oklink.com/xlayer/address/0x62a42AE83304eBa619d71f5f86B87E665A8D7c1E) |
 | Deployer Wallet | `0xA8950d3e9B0Df7CD5fcdb05B4639B558aFBb57ba` | [Explorer](https://www.oklink.com/xlayer/address/0xA8950d3e9B0Df7CD5fcdb05B4639B558aFBb57ba) |
-| Factory Deploy TX | `0x45fe9fcf95d80bc2...` | [Explorer](https://www.oklink.com/xlayer/tx/0x45fe9fcf95d80bc2a71e3566246d25ad598fc2ebfeb0e81b8cbc592b326b8e20) |
+| Factory Deploy TX | `0x45fe9fcf95d80bc2...` | [Explorer](https://www.oklink.com/xlayer/tx/0x06b80fdc44543f60f171c1f5dcd784a0293f61716e987c3c995972bf9ced20c4) |
 
 All on-chain activity is verifiable via the in-app **Evidence Page** (`/evidence`).
 

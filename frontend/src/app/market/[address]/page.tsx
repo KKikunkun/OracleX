@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Header } from '@/components/Header'
 import { BettingPanel } from '@/components/BettingPanel'
+import { TradeHistory } from '@/components/TradeHistory'
 import { fetchMarket, type MarketInfo } from '@/lib/api'
 
 const isSimAddress = (addr: string) => addr.startsWith('0xSIM_')
@@ -138,8 +139,11 @@ export default function MarketPage() {
               {market.currentPrice && (
                 <InfoRow label="Current Price" value={`$${market.currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
               )}
-              <InfoRow label="YES Pool"    value={`${yesPoolOKB} OKB`} accent="text-oracle-yes" />
-              <InfoRow label="NO Pool"     value={`${noPoolOKB} OKB`}  accent="text-oracle-no" />
+              <InfoRow label="YES Reserve (virtual)" value={`${yesPoolOKB}`} accent="text-oracle-yes" />
+              <InfoRow label="NO Reserve (virtual)"  value={`${noPoolOKB}`}  accent="text-oracle-no" />
+              {market.contractBalance && (
+                <InfoRow label="TVL (real)" value={`${(parseFloat(market.contractBalance) / 1e18).toFixed(4)} OKB`} accent="text-oracle-gold" />
+              )}
               <InfoRow label="Deadline"    value={deadline} />
               {market.resolved && market.resolutionPrice && (
                 <InfoRow label="Settlement Price" value={`$${market.resolutionPrice.toLocaleString()}`} accent="text-oracle-gold" />
@@ -165,11 +169,13 @@ export default function MarketPage() {
             </div>
           </div>
 
-          {/* Right: betting panel */}
-          <div>
+          {/* Right: betting panel + trade history */}
+          <div className="space-y-5">
             <BettingPanel market={market} />
 
-            <div className="mt-5 border border-oracle-border rounded-xl bg-oracle-panel p-5">
+            {!simMode && <TradeHistory address={address} />}
+
+            <div className="border border-oracle-border rounded-xl bg-oracle-panel p-5">
               <h3 className="text-sm font-bold text-oracle-muted uppercase tracking-wider mb-4">How It Works</h3>
               <ol className="space-y-2.5 text-sm text-oracle-muted">
                 <li><span className="text-oracle-accent font-bold mr-1.5">1.</span>OracleX Signal Agent detects price movement</li>

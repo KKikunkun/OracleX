@@ -28,7 +28,7 @@ export const config = {
   PORT: parseInt(process.env.PORT || '3001'),
 
   // Market config
-  INITIAL_LIQUIDITY_ETH: '0.004',  // 0.004 OKB split 50/50 per market
+  INITIAL_LIQUIDITY_ETH: '0',  // Virtual liquidity — no real OKB needed
   PLATFORM_FEE_BPS: 200,           // 2%
 
   // Explorer

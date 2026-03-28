@@ -52,7 +52,8 @@ const resolver = new ResolverAgent(
       if (txHash) market.resolveTxHash = txHash
       saveMarket(market)
     }
-  }
+  },
+  (market) => saveMarket(market),
 )
 
 // ── Creator Agent ─────────────────────────────────────────────
@@ -114,7 +115,11 @@ async function main() {
   console.log(`[Boot] Loaded ${marketsMap.size} markets (${actions.length} actions from disk)\n`)
 
   // Start API server FIRST (x402 HTTP calls need it running)
-  const { server } = createApiServer(getMarkets, getActions, { getPayments, getX402Stats, getServiceCatalog })
+  const { server } = createApiServer(
+    getMarkets, getActions,
+    { getPayments, getX402Stats, getServiceCatalog },
+    { deployMarket: (params) => creator.deployMarket(params), logAction },
+  )
   await new Promise<void>(resolve => {
     server.listen(config.PORT, () => {
       console.log(`API server: http://localhost:${config.PORT}`)

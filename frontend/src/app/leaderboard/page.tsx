@@ -90,8 +90,8 @@ export default function LeaderboardPage() {
   const createCount  = actions.filter(a => a.role === 'creator').length
   const resolveCount = actions.filter(a => a.role === 'resolver').length
 
-  const resolvedActions = actions.filter(a => a.role === 'resolver' && a.action.includes('Resolved'))
-  const accuracy = resolvedActions.length > 0 ? 100 : null
+  // Accuracy not yet tracked on-chain — show null until real data available
+  const accuracy: number | null = null
 
   const agents: AgentStats[] = [
     {
